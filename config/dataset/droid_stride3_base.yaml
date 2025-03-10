@@ -1,0 +1,30 @@
+data_path: "s3://Anonymous/Droid_episodes"
+language_embedding_path: "s3://Anonymous/Droid_language_embeddings"
+extrinsic_path: "/xxx/xxx/share_data/Anonymous/Droid_extrinsics"
+traj_per_episode: 4
+traj_length: 15
+cameras_per_scene: 6
+use_baseframe_action: True
+split_type: null
+train_data_list: '/xxx/xxx/share_data/Anonymous/droid/available_list_train_stride_3.pkl'
+eval_data_list: '/xxx/xxx/share_data/Anonymous/droid/available_list_eval_stride_3.pkl'
+stride: 3
+gripper_type: 'next_observation' # 'current_action' or 'next_observation'
+
+action_spec:
+  world_vector:
+    tensor: 3
+    minimum: -0.08
+    maximum: 0.08
+  rotation_delta:
+    tensor: 4
+    minimum: -0.08
+    maximum: 0.08
+  gripper_closedness_action:
+    tensor: 1
+    minimum: 0.0
+    maximum: 1.0
+  terminate_episode:
+    tensor: 3
+    minimum: 0
+    maximum: 1

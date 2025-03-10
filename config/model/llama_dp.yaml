@@ -1,0 +1,10 @@
+name: 'llama_dp'
+vocab_size: 768
+num_layers: 12
+dropout_rate: 0.0
+include_prev_timesteps_actions: False
+freeze_backbone: False
+use_qformer: True
+use_wrist_img: False
+use_depth_img: false
+dim_align_type: 2

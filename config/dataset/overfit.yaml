@@ -1,0 +1,10 @@
+data_path: 's3://Anonymous/Sim_Data'
+language_embedding_path: 's3://Anonymous/Sim_Data_language_embeddings_77token'
+traj_per_episode: 8
+traj_length: 15
+cameras_per_scene: 6
+use_baseframe_action: false
+split_type: 'overfit'
+train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/overfit_data_cam_list.pkl'
+eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/overfit_data_cam_list.pkl'
+stride: 4

@@ -1,0 +1,68 @@
+data_path: "s3://Anonymous/Droid_episodes"
+language_embedding_path: "s3://Anonymous/Droid_language_embeddings"
+extrinsic_path: "/xxx/xxx/share_data/Anonymous/Droid_extrinsics"
+traj_per_episode: 2
+traj_length: 8
+cameras_per_scene: 6
+num_given_observation: 2
+include_target: 1
+img_preprocess_type: 0
+augment_traj: 0
+use_baseframe_action: True
+split_type: /xxx/xxx/share_data/Anonymous/select/selected_train_L16_S3_N10_T100.pkl
+train_data_list: '/xxx/xxx/share_data/Anonymous/select/selected_train_L16_S3_N10_T100.pkl' 
+# available_list_sampled(ins)_train_S3_L40_N1.pkl, available_list_(new)_train_S3_L40_N1.pkl
+eval_data_list: null # '/xxx/xxx/share_data/Anonymous/droid/available_list_eval_stride_3_len_40.pkl'
+stride: 3
+
+gripper_type: 'next_observation' # 'current_action' or 'next_observation'
+
+lab_eval:
+  data_path: '/xxx/xxx/share_data/Anonymous/Dataset/LabData'
+  language_embedding_path: '/xxx/xxx/share_data/Anonymous/Dataset/LabData_language_embeddings_77token_v0'
+  traj_per_episode: ${dataset.traj_per_episode}
+  traj_length: ${dataset.traj_length}
+  cameras_per_scene: 20
+  use_baseframe_action: ${dataset.use_baseframe_action}
+  split_type: 'fix_traj'
+  include_target: ${dataset.include_target}
+  train_data_list: '/xxx/xxx/Anonymous/Code/embodied_foundation_droid/labdata_train_list.pkl'
+  eval_data_list: '/xxx/xxx/Anonymous/Code/embodied_foundation/lab_eval_for_droid.pkl'
+  stride: 4
+
+# 0.1024
+action_spec:
+  world_vector:
+    tensor: 3
+    minimum: -0.1024
+    maximum: 0.1024
+  rotation_delta:
+    tensor: 4
+    minimum: [-0.01, -0.1024, -0.1024, -0.1024]
+    maximum: [0.0, 0.1024, 0.1024, 0.1024]
+  gripper_closedness_action:
+    tensor: 1
+    minimum: 0.0
+    maximum: 1.0
+  terminate_episode:
+    tensor: 3
+    minimum: 0
+    maximum: 1
+
+# action_spec:
+#   world_vector:
+#     tensor: 3
+#     minimum: -0.08
+#     maximum: 0.08
+#   rotation_delta:
+#     tensor: 4
+#     minimum: -0.08
+#     maximum: 0.08
+#   gripper_closedness_action:
+#     tensor: 1
+#     minimum: 0.0
+#     maximum: 1.0
+#   terminate_episode:
+#     tensor: 3
+#     minimum: 0
+#     maximum: 1

@@ -1,0 +1,90 @@
+dataset:
+  data_path: s3://xxx
+  language_embedding_path: s3://Anonymous/xxx
+  traj_per_episode: 2
+  traj_length: 11
+  include_target: 1
+  num_given_observation: 2
+  cameras_per_scene: 20
+  use_baseframe_action: true
+  aug_gripper_status_pose: 0
+  split_type: fix_traj
+  use_euler: 0
+  train_data_list: 
+  eval_data_list: 
+  stride: 4
+  close_loop_eval_data_list: close_loop_eval_list.pkl
+model:
+  name: RT1_llama
+  vocab_size: 768
+  num_layers: 12
+  dropout_rate: 0.0
+  time_sequence_length: 5
+  include_prev_timesteps_actions: false
+  freeze_backbone: false
+  use_qformer: true
+  use_wrist_img: false
+  use_depth_img: false
+  input_size: (182, 322)
+epoch: 15
+iter_per_epoch: 36000
+task_name: calvin_o2_p10_fixcamera_clusterycb_abc_mc_all_grmg2_n_basecoord
+tensorboard_output_dir: embodied
+batch_size: 32
+ckpt_path: None
+lr: 0.0001
+prediction_type: epsilon
+abs_pose: 0
+num_pred_action: 10
+n_action_steps: 4
+trajectory_dim: 7
+abs_sup: 0
+use_action_head_diff: 0
+scheduler_type: 5
+cfg: 0
+wrap_grmg_data: 2
+dataname: calvin_mc
+taskname: task_ABC_D
+optimizer:
+  name: adamw
+  weight_decay: 0.05
+  betas_0: 0.9
+  betas_1: 0.95
+scheduler:
+  sched: step
+  warmup_lr: 0
+  warmup_epochs: 1
+  num_epochs: 100000
+  decay_epochs: 100000
+  step_on_epochs: false
+action_spec:
+  world_vector:
+    tensor: 3
+    minimum: -0.064
+    maximum: 0.064
+  rotation_delta:
+    tensor: 4
+    minimum: -0.064
+    maximum: 0.064
+  gripper_closedness_action:
+    tensor: 1
+    minimum: -1.0
+    maximum: 1.0
+  terminate_episode:
+    tensor: 3
+    minimum: 0
+    maximum: 1
+use_close_loop_eval: true
+close_loop_eval:
+  eval_iters: 10000
+  test_episodes_num: 100
+  eval_num:
+    PickCube-v0: 100
+    PickSingleYCB-v0: 100
+    StackCube-v0: 100
+    PickClutterYCB-v0: 100
+    PickSingleEGAD-v0: 100
+  exec_steps: 4
+fix_camera: 1
+use_adjust_scheduler: true
+min_lr_scale: 0.01

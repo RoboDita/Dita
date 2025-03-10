@@ -1,0 +1,60 @@
+epoch: 5000000
+iter_per_epoch: 36000
+# task_name: 'banana'
+task_name: 'test'
+tensorboard_output_dir: 'tensorboard/embodied'
+batch_size: 8
+ckpt_path: None
+lr: 0.0001
+
+optimizer:
+  name: 'adamw'
+  weight_decay: 0.05
+  betas_0: 0.9
+  betas_1: 0.95
+  
+scheduler:
+  sched: 'step'
+  warmup_lr: 0
+  warmup_epochs: 1
+  num_epochs: 100000
+  decay_epochs: 100000
+  step_on_epochs: false
+
+defaults:
+  - dataset: fix_traj_lab
+  - model:  rt1_llama
+  - _self_
+
+action_spec:
+  world_vector: 
+    tensor: 3
+    minimum: -0.1024
+    maximum: 0.1024
+  rotation_delta:
+    tensor: 4
+    minimum: -0.1024
+    maximum: 0.1024
+  gripper_closedness_action:
+    tensor: 1
+    minimum: 0.0
+    maximum: 1.0
+  terminate_episode:
+    tensor: 3
+    minimum: 0
+    maximum: 1
+
+use_close_loop_eval: false
+
+close_loop_eval:
+  test_episodes_num: 50
+  eval_num:
+    PickCube-v0 : 15
+    PickSingleYCB-v0 : 160
+    StackCube-v0 : 25
+    PickClutterYCB-v0: 200
+
+hydra:
+  job_logging:
+    root:
+      level: INFO

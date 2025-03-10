@@ -1,0 +1,10 @@
+data_path: 's3://Anonymous/Sim_Data/ManiSkill2-0413/'
+language_embedding_path: 's3://Anonymous/Sim_Data_language_embeddings_77token_0413'
+traj_per_episode: 8
+traj_length: 15
+cameras_per_scene: 20
+use_baseframe_action: False
+split_type: 'fix_cam'
+train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/pickcube_and_stackcube_0413_fix_cam_train_data_list.pkl'
+eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/pickcube_and_stackcube_0413_fix_cam_eval_data_list.pkl'
+stride: 4

@@ -1,0 +1,21 @@
+data_path: 's3://Anonymous/Sim_Data/ManiSkill2-0503/'
+language_embedding_path: 's3://Anonymous/Sim_Data_language_embeddings_77token_0503'
+traj_per_episode: 2
+traj_length: 5
+include_target: 0
+num_given_observation: 2
+cameras_per_scene: 20
+use_baseframe_action: false
+split_type: 'fix_traj'
+train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_balanced_train_list.pkl'
+eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_balanced_eval_list.pkl'
+stride: 4
+use_euler: 0
+# close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/close_loop_eval_data_list_200.pkl'
+# close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/hold_25_class_ycb_close_loop_eval_data_list.pkl'
+close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_close_loop_eval_list.pkl'
+
+# train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/pickcube_and_stackcube_and_picksingleycb_0413_fix_traj_train_data_list.pkl'
+# eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/pickcube_and_stackcube_and_picksingleycb_0413_fix_traj_eval_data_list.pkl'
+# stride: 4
+# close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/pickcube_stackcube_large_scale_close_eval_list.pkl'

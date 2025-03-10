@@ -1,0 +1,75 @@
+epoch: 5000000
+iter_per_epoch: 36000
+task_name: 'diff_epred_nowrist_s5_policy_2node'
+tensorboard_output_dir: 'tensorboard/embodied'
+batch_size: 32
+ckpt_path: None
+lr: 0.0001
+prediction_type: 'epsilon'
+abs_pose: 0
+num_pred_action: 4
+n_action_steps: 1
+trajectory_dim: 11
+abs_sup: 0
+use_action_head_diff: 0
+scheduler_type: 0
+cfg: 0
+dataname: 'maniskill'
+
+optimizer:
+  name: 'adamw'
+  weight_decay: 0.05
+  betas_0: 0.9
+  betas_1: 0.95
+  
+scheduler:
+  sched: 'step'
+  warmup_lr: 0
+  warmup_epochs: 1
+  num_epochs: 100000
+  decay_epochs: 100000
+  step_on_epochs: False
+
+defaults:
+  - dataset: fix_traj_all
+  - model:  rt1_llama_dp
+  - _self_
+
+action_spec:
+  world_vector: 
+    tensor: 3
+    minimum: -0.064
+    maximum: 0.064
+  rotation_delta:
+    tensor: 4
+    minimum: -0.064
+    maximum: 0.064
+  gripper_closedness_action:
+    tensor: 1
+    minimum: -1.0
+    maximum: 1.0
+  terminate_episode:
+    tensor: 3
+    minimum: 0
+    maximum: 1
+
+use_close_loop_eval: False
+
+
+close_loop_eval:
+  eval_iters: 5000
+  test_episodes_num: 63
+  eval_num:
+    PickCube-v0 : 100
+    PickSingleYCB-v0 : 100
+    StackCube-v0 : 100
+    PickClutterYCB-v0: 100
+    PickSingleEGAD-v0: 100
+  exec_steps: 4
+
+hydra:
+  job_logging:
+    root:
+      level: ERROR 
+  run:
+    dir: ./outputs/maniskill2/${task_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}

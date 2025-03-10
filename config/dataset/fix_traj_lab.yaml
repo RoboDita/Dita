@@ -1,0 +1,10 @@
+data_path: '/xxx/xxx/share_data/Anonymous/Dataset/records_banana_fixgripper'
+language_embedding_path: '/xxx/xxx/share_data/Anonymous/Dataset/records_banana_embeddings_77token_v0'
+traj_per_episode: 6
+traj_length: 2
+cameras_per_scene: 20
+use_baseframe_action: false
+split_type: 'fix_traj'
+train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/FilePath/lab_banana_train_list.pkl'
+eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/FilePath/lab_banana_eval_list.pkl'
+stride: 4

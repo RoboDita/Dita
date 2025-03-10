@@ -1,0 +1,17 @@
+data_path: 's3://Anonymous/Sim_Data/ManiSkill2-camerabase3/'
+language_embedding_path: 's3://Anonymous/Sim_Data_language_embeddings_77token_camerabase3/'
+traj_per_episode: 6
+traj_length: 2
+cameras_per_scene: 5
+use_baseframe_action: false
+use_language_instruction: true
+split_type: 'fix_traj'
+train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill_fewcam_datalist/new_task_ratio_segmentation_train_list.pkl'
+# train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill_fewcam_datalist/pickclutterycb_448_train_list.pkl'
+eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill_fewcam_datalist/balanced_segmentation_eval_list.pkl'
+stride: 4
+# close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill_fewcam_datalist/pickclutterycb_448_close_loop_eval_list.pkl'
+close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill_fewcam_datalist/balanced_segmentation_close_loop_eval_list.pkl'
+num_given_observation: 2
+use_segmentation: true
+include_target: 0
