@@ -102,25 +102,15 @@ Simulation Benchmark Evaluations
 This evaluation is based on [SimplerEnv](https://github.com/simpler-env/SimplerEnv)
 
 
-|                                                    | 0                    | 3      | 4      | 5         | 6          | 8       |
-|:---------------------------------------------------|:---------------------|:-------|:-------|:----------|:-----------|:--------|
-| coke_can/matching_avg                              | **0.7266666666666669**   | 0.567  | 0.787  | 0.17      | nan        | 0.163   |
-| coke_can/variant_avg                               | **0.6**                  | 0.49   | 0.823  | 0.006     | nan        | 0.545   |
-| coke_can/matching/horizontal                       | **0.8500000000000001**   | 0.82   | 0.74   | 0.21      | nan        | 0.27    |
-| coke_can/matching/vertical                         | **0.7400000000000001**   | 0.33   | **0.74**   | 0.21      | nan        | 0.03    |
-| coke_can/matching/standing                         | 0.5900000000000001   | 0.55   | **0.88**   | 0.09      | nan        | 0.19    |
-| coke_can/variant/horizontal                        | 0.6799999999999999   | 0.569  | **0.822**  | 0.005     | nan        | 0.711   |
-| coke_can/variant/vertical                          | 0.5066666666666667   | 0.204  | **0.754**  | 0.0       | nan        | 0.271   |
-| coke_can/variant/standing                          | 0.6133333333333334   | 0.698  | **0.893**  | 0.013     | nan        | 0.653   |
-| move_near/variant                                  | 0.5213089271066149   | 0.323  | **0.792**  | 0.031     | nan        | 0.477   |
-| move_near/matching                                 | 0.49126940133037694  | 0.317  | **0.779**  | 0.042     | nan        | 0.462   |
-| drawer/matching_avg                                | 0.4629629629629629   | **0.597**  | 0.25   | 0.227     | nan        | 0.356   |
-| drawer/variant_avg                                 | **0.3752343844338537**   | 0.294  | 0.353  | 0.011     | nan        | 0.177   |
-| drawer/matching/open                               | **0.2314814814814815**   | 0.296  | 0.157  | 0.009     | nan        | 0.194   |
-| drawer/matching/close                              | 0.6944444444444443   | 0.891  | 0.343  | 0.444     | nan        | 0.518   |
-| drawer/variant/open                                | 0.2155516441230727   | 0.069  | 0.333  | 0.0       | nan        | 0.158   |
-| drawer/variant/close                               | **0.5349171247446347**   | 0.519  | 0.372  | 0.021     | nan        | 0.195   |
-| models                                             | ours                 | RT-1-X | RT-2-X | Octo-Base | Octo-Small | OpenVLA |
+| models                                             | Dita(ours)                 | RT-1-X |  Octo-Base | OpenVLA |
+|:---------------------------------------------------|:---------------------|:-------|:-------|:----------|
+| coke_can/matching                             | **0.837**   | 0.567  |  0.17      | 0.163   |
+| coke_can/variant                               | **0.855**   | 0.490   |  0.006     | 0.545   |
+| move_near/matching                                 | **0.760**  | 0.317  | 0.042     | 0.462   |
+| move_near/variant                                  | **0.730**   | 0.323  | 0.031     |  0.477   |
+| drawer/matching                               | 0.463   | **0.597**  | 0.227     |  0.356   |
+| drawer/variant                                | **0.375**   | 0.294  | 0.011     | 0.177   |
+
 
 
 In our experiments, we use the Bridge_orig from tfds in google cloud, in which the image has been resized (480\*512->224\*224) and caused **image distortion**.
