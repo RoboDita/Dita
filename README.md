@@ -127,7 +127,13 @@ The dataloader code of OXE is based on [OpenVLA](https://github.com/openvla/open
 
 If you find our code or models useful in your work, please cite [our paper](https://arxiv.org/abs/2410.15959):
 
-
+```
+@article{hou2025dita,
+ title={Dita: Scaling Diffusion Transformer for Generalist Vision-Language-Action Policy},
+ author={Hou, Zhi and Zhang, Tianyi and Xiong, Yuwen and Duan, Haonan and Pu, Hengjun and Tong, Ronglei and Zhao, Chengyang and Zhu, Xizhou and Qiao, Yu and Dai, Jifeng and Chen, Yuntao},
+ journal={arXiv preprint arXiv:2410.15959},
+ year={2024}
+}
 
 ```
 
