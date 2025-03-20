@@ -1,6 +1,5 @@
 # Dita: Scaling Diffusion Transformer for Generalist Vision-Language-Action Policy
 
-[![arXiv](https://img.shields.io/badge/arXiv-2406.09246-df2a2a.svg)](https://arxiv.org/abs/2410.15959) 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Static Badge](https://img.shields.io/badge/Project-Page-a)](https://RoboDita.github.io/)
 
