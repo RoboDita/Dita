@@ -112,16 +112,14 @@ This evaluation is based on [SimplerEnv](https://github.com/simpler-env/SimplerE
 
 
 
-In our experiments, we use the Bridge_orig from tfds in google cloud, in which the image has been resized (480\*512->224\*224) and caused **image distortion**.
-
 #### Real Franka Demonstration
 
 Please refer to the [project page](https://RoboDita.github.io/).
 
 ### Acknowledgement
 
-The dataloader code of OXE is based on [OpenVLA](https://github.com/openvla/openvla), The dataloader code of CALVIN is based on [GR-MG](https://github.com/bytedance/GR-MG), The architecture is based on transformers.
-
+The dataloader code of OXE is based on [OpenVLA](https://github.com/openvla/openvla), The dataloader code of CALVIN is based on [GR-MG](https://github.com/bytedance/GR-MG), The architecture is based on transformers. If you have any questions, feel free to contact Zhi Hou (zhou9878 at uni dot sydney dot edu dot au) or Tianyi Zhang (tianyizhang0213 at zju dot edu dot cn)
+ 
 ### Citation
 
 If you find our code or models useful in your work, please cite [our paper](https://arxiv.org/abs/2410.15959):
@@ -130,7 +128,7 @@ If you find our code or models useful in your work, please cite [our paper](http
 @article{hou2025dita,
  title={Dita: Scaling Diffusion Transformer for Generalist Vision-Language-Action Policy},
  author={Hou, Zhi and Zhang, Tianyi and Xiong, Yuwen and Duan, Haonan and Pu, Hengjun and Tong, Ronglei and Zhao, Chengyang and Zhu, Xizhou and Qiao, Yu and Dai, Jifeng and Chen, Yuntao},
- journal={arXiv preprint arXiv:2410.15959},
+ journal={arXiv preprint arXiv:2410.15959v4},
  year={2024}
 }
 
