@@ -7,7 +7,7 @@
 
 ### Installation
 
-To run the code, you should install the requiresments. The code is run on python3.10 and pytorch 2, tensorflow==2.15.0, CUDA 12.1. 
+To run the code, you should install the requiresments. The code is run on python3.9 and pytorch 2, tensorflow==2.15.0, CUDA 12.1. 
 
 clone the code as follow,
 
