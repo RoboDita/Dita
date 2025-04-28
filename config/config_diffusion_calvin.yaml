@@ -28,13 +28,13 @@ scheduler:
   sched: 'step'
   warmup_lr: 0
   warmup_epochs: 0
-  num_epochs: 100000
-  decay_epochs: 100000
+  num_epochs: 15
+  decay_epochs: 1
   step_on_epochs: False
 
 defaults:
   - dataset: fix_traj_all
-  - model:  rt1_llama_nowrist
+  - model:  llama_dp
   - _self_
 
 action_spec:

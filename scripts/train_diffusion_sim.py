@@ -757,8 +757,6 @@ def train(cfg: DictConfig):
             
 
             start_loss_action_chunk_idx = 0
-            if 'no_cur_act_loss' in cfg:
-                start_loss_action_chunk_idx = 1
 
             loss_mask = loss_mask[...,start_loss_action_chunk_idx:]
             loss = F.mse_loss(logits[..., start_loss_action_chunk_idx:,:], target[..., start_loss_action_chunk_idx:,:, ], reduction='none')
