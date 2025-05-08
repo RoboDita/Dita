@@ -1,16 +1,4 @@
-# Copyright (2024) Bytedance Ltd. and/or its affiliates
-
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-
-#     http://www.apache.org/licenses/LICENSE-2.0
-
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Code is based on GR-MG
 import io
 import os
 from PIL import Image
@@ -115,7 +103,7 @@ class CalvinDataset_Policy(Dataset):
 
         self.action_dim = 7
         self.state_dim = 7  # ( x,y,z,r,p,y,gripper) 
-        self.client = Client()
+        # self.client = Client()
 
         if mode == 'validate':
             tag = "validation"
@@ -163,7 +151,7 @@ class CalvinDataset_Policy(Dataset):
         t1=time.time()
         while True:
             try:
-                result=np.load(io.BytesIO(self.client.get(path, allow_pickle=True)))
+                result=np.load(path)
                 break
             except:
                 t2=time.time()
@@ -175,9 +163,10 @@ class CalvinDataset_Policy(Dataset):
 
 
     def _initialize(self):
-        """Generate the sequence index pair."""
-
-        self.anns = np.load(io.BytesIO(self.client.get(f"{self.dataset_dir}/lang_annotations/auto_lang_ann.npy")), allow_pickle=True)[()]
+        """Generate the sequence index pair."""        
+        self.anns = np.load(
+            os.path.join(self.dataset_dir, "lang_annotations", "auto_lang_ann.npy"), 
+            allow_pickle=True).item()
         # (traj_index, start, end, act_end, traj_st)
         self.seq_tuple = []
         task_dict = {}
