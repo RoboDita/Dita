@@ -13,7 +13,7 @@ import time
 import numpy as np
 from Dataset_VLA.utils import euler2rotm, rotm2euler
 from utils import *
-# import a s3 package as Client
+# from petrel_client.client import Client
 ACTION_POS_SCALE = 50
 ACTION_ROT_SCALE = 20
 
@@ -79,7 +79,9 @@ class CalvinDataset_Policy(Dataset):
                  use_data_augmentation=True,
                  task_num=10000,
                  use_play=True,
-                 use_labeled=True):
+                 use_labeled=True,
+                 wrap_grmg_data=0,
+                 ):
         super().__init__()
         '''
         seq_len: length of observation
@@ -90,7 +92,9 @@ class CalvinDataset_Policy(Dataset):
         just set a very great value. When you want to do fewshot experiments, you should set it as a specific value, such as 52( 10% of total data ).
         use_full: whether to use play data
         use_labeled: whether to use data annotated with language
+        wrap_grmg_data: This is the default wrap setting
         '''
+        self.wrap_grmg_data = wrap_grmg_data
         self.dataset_dir = os.path.join(data_dir, subfolder)
         self.seq_len = seq_len 
         self.act_len = act_len
@@ -194,9 +198,13 @@ class CalvinDataset_Policy(Dataset):
                     ed = st + self.seq_len
                     act_ed = st + self.seq_len + self.act_len - 1 
                     self.seq_tuple.append([traj_idx, st, ed, act_ed, traj_st, traj_ed,text])
-
         if self.use_play:
             # if you want to train with play data, please first generate play.json, and replace the following path
+            # np.load(io.BytesIO(self.client.get(f"{self.dataset_dir}/lang_annotations/auto_lang_ann.npy")), allow_pickle=True)[()]
+            # with open(io.BytesIO(self.client.get(os.path.join(self.dataset_dir, "play.json"), 'r'))) as file:
+            #     self.play_traj = json.load(file)
+            print('useplay')
+            import json
             with open(os.path.join(self.dataset_dir, "play.json"), 'r') as file:
                 self.play_traj = json.load(file)
             n_trajs = len(self.play_traj['st_ed_list'])
@@ -214,6 +222,10 @@ class CalvinDataset_Policy(Dataset):
         return len(self.seq_tuple)
 
     def __getitem__(self, index):
+    #     world2cam = np.asarray([[ 0.723, -0.03 ,  0.69 ,  0.   ],                                                                                           
+    #                     [ 0.514,  0.691, -0.509,  0.   ],                   
+    #                     [-0.461,  0.723,  0.515,  0.   ],                                                                                                 
+    #                     [ 0.215, -0.263, -4.399,  1.   ]]).T
         curr_tuple = self.seq_tuple[index]
         st = curr_tuple[1]
         ed = curr_tuple[2]
@@ -252,8 +264,7 @@ class CalvinDataset_Policy(Dataset):
                 hand_rgb = frame['rgb_gripper']
                 hand_rgb = Image.fromarray(hand_rgb)
                 hand_rgb = T.ToTensor()(hand_rgb.convert("RGB"))
-                hand_rgbs.append(hand_rgb)
-
+                hand_rgbs.append(hand_rgb)   
         # we use relative action represented in current end effector coordinate
         action_buffer = []
         action_valid = []
@@ -274,7 +285,7 @@ class CalvinDataset_Policy(Dataset):
                 rotm0 = euler2rotm(rpy0)
                 xyz1 = state_buffer[k+1][0:3]
                 rpy1 = state_buffer[k+1][3:6]
-                rotm1 = euler2rotm(rpy1)
+                rotm1 = euler2rotm(rpy1)                
                 gripper1 = state_buffer[k+1][-1]
                 delta_xyz = rotm0.T @ (xyz1 - xyz0)
                 delta_rotm = rotm0.T @ rotm1
@@ -383,7 +394,6 @@ class CalvinDataset_Policy(Dataset):
             progress=(st+i-traj_st)/(traj_ed-traj_st)
             progress_data[i]=progress
 
-        
         data = dict()
         data['goal_rgb'] = goal_rgb_data # (C, H, W)
         data['rgb'] = rgb_data # (len, C, H, W)
@@ -395,38 +405,154 @@ class CalvinDataset_Policy(Dataset):
         data['action_mask'] = action_mask_data # (len, act_len, action_dim)
         data['text'] = [text]
         data["progress"]=progress_data #(len)
-
-        data['observation'] = {}
-        data['action'] = {}
-        data['observation']['image'] = rgb_data[None,]
-        data['observation']['wrist_image'] = hand_rgb_data[None,]
-        data['action']['action'] = action_data[None, 0, ..., :6]
-        data['action']['gripper_closedness_action'] = action_data[None, 0, ..., 6:]
-        data['action']['loss_weight'] = action_mask_data[:1][...,None]
-                                                        
-        data['action']['terminate_episode'] = torch.zeros_like(data['action']['action'][...,:3])
         # import ipdb;ipdb.set_trace()
-        # 模拟action和其他数据  
-        # res['action']['gripper_closedness_action'] = torch.randn(2, sequence_length, 1)  
-        # res['action']['loss_weight'] = torch.randn(2, sequence_length, 3)  
-        # res['action']['world_vector'] = torch.randn(2, sequence_length, 3)  
-        # res['action']['action'] = torch.randn(2, sequence_length, 7)  
-        
-        # res['observation']['image'] = torch.randn(2,2,3,224,224)
-        # res['observation']['natural_language_embedding'] = torch.randn(2,32,77, 768)
-        data['observation']['camera_extrinsic_cv'] = torch.randn(1, len(action_data), 4, 4)
-        data['instruction'] = text
 
+        # TODO this is to wrap grmg dataset for our model
+        if self.wrap_grmg_data == 0:
+            # only use a single trajectory
+            data['observation'] = {}
+            data['action'] = {}
+            data['observation']['image'] = rgb_data[None,]
+            data['observation']['wrist_image'] = hand_rgb_data[None,]
+            data['action']['action'] = action_data[None, 0, ..., :6]
+            data['action']['gripper_closedness_action'] = action_data[None, 0, ..., 6:]
+            data['action']['loss_weight'] = action_mask_data[:1][...,None]
+                                                            
+            data['action']['terminate_episode'] = torch.zeros_like(data['action']['action'][...,:3])
+
+            data['action']['abs_tar_pose'] = data['state'][None, ]
+            # import ipdb;ipdb.set_trace()
+            # 模拟action和其他数据  
+            # res['action']['gripper_closedness_action'] = torch.randn(2, sequence_length, 1)  
+            # res['action']['loss_weight'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['world_vector'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['action'] = torch.randn(2, sequence_length, 7)  
+            
+            # res['observation']['image'] = torch.randn(2,2,3,224,224)
+            # res['observation']['natural_language_embedding'] = torch.randn(2,32,77, 768)
+            data['observation']['camera_extrinsic_cv'] = torch.randn(1, len(action_data), 4, 4)
+            data['instruction'] = text
+        elif self.wrap_grmg_data == 1:
+            # we assume that we have only a single input image
+            data['observation'] = {}
+            data['action'] = {}
+            data['observation']['image'] = rgb_data[:, None,]
+            data['observation']['wrist_image'] = hand_rgb_data[:, None,]
+            data['action']['action'] = action_data[..., :6]
+            data['action']['gripper_closedness_action'] = action_data[..., 6:]
+            data['action']['loss_weight'] = action_mask_data[...,None]
+                                                            
+            data['action']['terminate_episode'] = torch.zeros_like(data['action']['action'][...,:3])
+
+            data['action']['abs_tar_pose'] = data['state'][:, None, ]
+            # import ipdb;ipdb.set_trace()
+            # 模拟action和其他数据  
+            # res['action']['gripper_closedness_action'] = torch.randn(2, sequence_length, 1)  
+            # res['action']['loss_weight'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['world_vector'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['action'] = torch.randn(2, sequence_length, 7)  
+            
+            # res['observation']['image'] = torch.randn(2,2,3,224,224)
+            # res['observation']['natural_language_embedding'] = torch.randn(2,32,77, 768)
+            data['observation']['camera_extrinsic_cv'] = torch.randn(1, len(action_data), 4, 4)
+            data['instruction'] = text
+        elif self.wrap_grmg_data == 2:
+            # we assume that we have only a two input image
+            data['observation'] = {}
+            data['action'] = {}
+            data['observation']['image'] = torch.cat([rgb_data[:-1, None,], rgb_data[1:, None,]], axis=1)
+            data['observation']['wrist_image'] = torch.cat([hand_rgb_data[:-1, None,], hand_rgb_data[1:, None,]], axis=1)
+
+            action_data = torch.cat([action_data[:-1, :1], action_data[1:, :]], axis=1) 
+            data['action']['action'] = action_data[..., :6]
+            data['action']['gripper_closedness_action'] = action_data[..., 6:]
+
+            action_mask_data = torch.cat([action_mask_data[:-1, :1], action_mask_data[1:, :]], axis=1) 
+            data['action']['loss_weight'] = action_mask_data[...,None]
+                                                            
+            data['action']['terminate_episode'] = torch.zeros_like(data['action']['action'][...,:3])
+
+            
+            state_data = torch.cat([rgb_data[:-1, None,], rgb_data[1:, None,]], axis=1)
+            data['action']['abs_tar_pose'] = state_data[:, ]
+            # import ipdb;ipdb.set_trace()
+            # 模拟action和其他数据  
+            # res['action']['gripper_closedness_action'] = torch.randn(2, sequence_length, 1)  
+            # res['action']['loss_weight'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['world_vector'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['action'] = torch.randn(2, sequence_length, 7)  
+            
+            # res['observation']['image'] = torch.randn(2,2,3,224,224)
+            # res['observation']['natural_language_embedding'] = torch.randn(2,32,77, 768)
+            data['observation']['camera_extrinsic_cv'] = torch.randn(1, len(action_data), 4, 4)
+            data['instruction'] = text
+
+        elif self.wrap_grmg_data == 3:
+            # we assume that we have only a three input image
+            # 1, 2, 3, 4
+            # 1, 2, 3
+            # 2, 3, 4
+            # 3, 4, 5
+            # import ipdb;ipdb.set_trace()
+            data['observation'] = {}
+            data['action'] = {}
+
+            data['observation']['image'] = torch.cat([rgb_data[ii:ii+1, None] for ii in range(3)], axis=1)
+            data['observation']['wrist_image'] = torch.cat([hand_rgb_data[ii:ii+1, None] for ii in range(3)], axis=1)
+
+
+            # 1 frame, -> 10
+
+            action_data = torch.cat([action_data[:1, :self.seq_len-1], action_data[-1:, :]], axis=1) 
+            data['action']['action'] = action_data[..., :6]
+            data['action']['gripper_closedness_action'] = action_data[..., 6:]
+
+            action_mask_data = torch.cat([action_mask_data[:1, :self.seq_len-1], action_mask_data[-1:, :]], axis=1) 
+            data['action']['loss_weight'] = action_mask_data[...,None]
+                                                            
+            data['action']['terminate_episode'] = torch.zeros_like(data['action']['action'][...,:3])
+
+            
+            state_data = torch.cat([state_data[ii:ii+1, None] for ii in range(3)], axis=1)
+            data['action']['abs_tar_pose'] = state_data[:, ]
+            # import ipdb;ipdb.set_trace()
+            # 模拟action和其他数据  
+            # res['action']['gripper_closedness_action'] = torch.randn(2, sequence_length, 1)  
+            # res['action']['loss_weight'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['world_vector'] = torch.randn(2, sequence_length, 3)  
+            # res['action']['action'] = torch.randn(2, sequence_length, 7)  
+            
+            # res['observation']['image'] = torch.randn(2,2,3,224,224)
+            # res['observation']['natural_language_embedding'] = torch.randn(2,32,77, 768)
+            data['observation']['camera_extrinsic_cv'] = torch.randn(1, len(action_data), 4, 4)
+            data['instruction'] = text
+            pass
+        # data['observation']['camera_extrinsic_cv'][:,:,:4,:4] = torch.from_numpy(world2cam)
         return data
   
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
-    data_dir = "s3://Anonymous/"
+    data_dir = "vc_new:s3://houzhi/"
     subfolder = 'task_ABC_D'
+    # seq_len = 2
+    # num_pred_action = 31
+    # act_len = seq_len + num_pred_action  - 1
+    # DS0 = CalvinDataset_Policy(
+    #     data_dir,
+    #     seq_len,
+    #     act_len,
+    #     forward_n_max=25,
+    #     mode='train',
+    #     subfolder=subfolder,
+    #     use_data_augmentation=False,
+    #     use_play=False,
+    #     task_num=10000,
+    #     wrap_grmg_data=1)
+    
     seq_len = 2
-    num_pred_action = 31
-    act_len = seq_len + num_pred_action  - 1
+    num_pred_action = 10
+    act_len = num_pred_action
     DS0 = CalvinDataset_Policy(
         data_dir,
         seq_len,
@@ -436,64 +562,7 @@ if __name__ == "__main__":
         subfolder=subfolder,
         use_data_augmentation=False,
         use_play=False,
-        task_num=10000)
+        task_num=10000,
+        wrap_grmg_data=2,
+        )
     
-    rgb_mean = np.array([0.485, 0.456, 0.406])
-    rgb_std  = np.array([0.229, 0.224, 0.225])
-    for i in range(0, len(DS0),100):
-        data = DS0[i]
-        import ipdb;ipdb.set_trace()
-        print(data['instruction'])
-        # print(data['action']['action'].shape)
-        continue
-        text = data['text']
-        goal_rgb = data['goal_rgb']
-        rgb = data['rgb']
-        hand_rgb = data['hand_rgb']
-        rel_state = data['rel_state']
-        action = data['action']
-        print(f"{text}")
-        fig, ax = plt.subplots(seq_len // 3 + 1, 3)
-        for k in range(seq_len):
-            temp_rgb = rgb[k].permute(1, 2, 0).numpy()
-            temp_rgb = temp_rgb * rgb_std + rgb_mean
-            temp_rgb = np.clip(temp_rgb, 0.0, 1.0)
-            ax[k // 3, k % 3].imshow(temp_rgb)
-        temp_rgb = goal_rgb.permute(1, 2, 0).numpy()
-        temp_rgb = temp_rgb * rgb_std + rgb_mean
-        temp_rgb = np.clip(temp_rgb, 0.0, 1.0)
-        ax[seq_len // 3, 2].imshow(temp_rgb)
-        plt.savefig("debug_goal_rgb.png", dpi=300)
-
-        fig, ax = plt.subplots(seq_len // 3 + 1, 3)
-        for k in range(seq_len):
-            temp_rgb = hand_rgb[k].permute(1, 2, 0).numpy()
-            temp_rgb = temp_rgb * rgb_std + rgb_mean
-            temp_rgb = np.clip(temp_rgb, 0.0, 1.0)
-            ax[k // 3, k % 3].imshow(temp_rgb)
-        plt.savefig("debug_goal_hand_rgb.png", dpi=300)
-        
-        accumulated_action = np.zeros(7)
-        # the following is to check whether the computation of relative actions is correct
-        for k in range(seq_len-1):
-            curr_action = action[k, 0].numpy()
-            curr_xyz = curr_action[0:3] / 50.0
-            curr_rpy = curr_action[3:6] / 20.0
-            curr_rotm = euler2rotm(curr_rpy)
-            curr_gripper = curr_action[-1]
-
-            accumulated_xyz = accumulated_action[0:3]
-            accumulated_rpy = accumulated_action[3:6]
-            accumulated_rotm = euler2rotm(accumulated_rpy)
-
-            accumulated_xyz += np.dot(accumulated_rotm, curr_xyz)
-            accumulated_rotm = accumulated_rotm @ curr_rotm
-            accumulated_rpy = rotm2euler(accumulated_rotm) 
-
-            next_rel_state = rel_state[k+1].numpy()
-            assert np.allclose(curr_gripper, next_rel_state[-1]), "gripper"
-            assert np.allclose(accumulated_xyz, next_rel_state[0:3]), "xyz"
-            assert np.allclose(accumulated_rpy, next_rel_state[3:6]), "rpy"
-            accumulated_action[0:3] = accumulated_xyz
-            accumulated_action[3:6] = accumulated_rpy
-            accumulated_action[-1] = curr_gripper
