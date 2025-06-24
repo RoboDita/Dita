@@ -79,6 +79,12 @@ torchrun --nproc_per_node=4 --nnodes=1 --node_rank=0 scripts/finetune_realdata.p
 
 scheduler_type=0 indicates we use 100 DDPM training steps.
 
+**We would like to highlight that the finetuning without lora can achieve cleanly better performance (robustness to variances, more horizon tasks).** 
+
+```
+torchrun --nproc_per_node=4 --nnodes=1 --node_rank=0 scripts/finetune_realdata.py +pretrained_path=dit_policy_checkpoint.pth dataset.traj_per_episode=16 dataset.traj_length=1 task_name=new_test_nodiffhead_few10_250124 num_pred_action=1 dataname=lab_907_1 batch_size=32 dataset.train_data_list=you pkl dataname file to include the collected pkl files name use_lora=False scheduler_type=0 dataset.num_given_observation=1  max_iters=10000
+```
+
 ### Fully Finetuning on CALVIN
 
 At first, you should follow the [instruction-calvin](https://github.com/mees/calvin) to install CALVIN environment.
