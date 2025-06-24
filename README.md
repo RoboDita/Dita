@@ -173,3 +173,4 @@ If you find our code or models useful in your work, please consider to cite our 
 
 ```
 
+An earlier preprint version is on [Arxiv](https://arxiv.org/abs/2410.15959). 
