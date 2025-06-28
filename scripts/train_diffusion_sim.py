@@ -723,12 +723,6 @@ def train(cfg: DictConfig):
             ).long()
 
             noisy_trajectory = network_module.noise_scheduler.add_noise(trajectory, noise, timesteps)
-            if 'no_abs_diff' in cfg and cfg.no_abs_diff:
-                noisy_trajectory = torch.cat([torch.zeros_like(trajectory[:, :1]), noisy_trajectory[:, 1:]], dim=1)  
-            if 'cat_pose_in_noise' in cfg and cfg.cat_pose_in_noise:
-                noisy_trajectory = torch.cat([obs_new['poses'].repeat(1, trajectory.shape[1], 1), noisy_trajectory], dim=-1)
-                obs_new.pop('poses')
-
             if cfg.dataname in ['rlbench', 'calvin','calvin_mc', 'metaworld']:
                 inputs = clip_tokenizer(text=batch['instruction'], return_tensors="pt", max_length=77, padding="max_length", truncation=True)
                 for key in inputs:
