@@ -19,7 +19,7 @@ sys.path.append(current_path)
 sys.path.append(os.path.join(current_path, "utils/"))
 sys.path.append(os.path.join(current_path, "../scripts"))
 sys.path.append(os.path.join(current_path, "../openvla"))
-# export PYTHONPATH="$(pwd)":"$(pwd)/rt1_pytorch/openx_utils/":"$(pwd)/../":"$(pwd)/../embodied_foundation/rt1_pytorch":$PYTHONPATH
+
 
 
 
@@ -84,10 +84,6 @@ def adjust_learning_rate(iter, configs):
             (1.0 + math.cos(math.pi * (iter - warmup_iters) / (total_iters - warmup_iters)))
     return lr_scaler
 
-def get_parameter_num(model):
-    total_num = sum(p.numel() for p in model.parameters())
-    trainable_num = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    return {'Total': total_num, 'Trainable': trainable_num}
 
 
 def unnormalize(x):
@@ -103,97 +99,6 @@ def get_args_parser():
 
     parser = argparse.ArgumentParser()
     return parser
-
-
-def setup_for_distributed(is_master):
-    """
-    This function disables printing when not in master process
-    """
-    import builtins as __builtin__
-
-    builtin_print = __builtin__.print
-
-    def print(*args, **kwargs):
-        force = kwargs.pop("force", False)
-        flush = kwargs.pop("flush", True)
-        if is_master or force:
-            builtin_print(*args, **kwargs, flush=flush)
-
-    __builtin__.print = print
-
-
-def calc_l2_loss(act, output, camera_extrinsic_cv):
-
-    gt_list = []
-    out_list = []
-    cam2world = Transform3d(matrix=camera_extrinsic_cv.mT).inverse()
-
-    def get_world_translation_rotation(output):
-
-        translation_delta = output["world_vector"].flatten(0, 1)
-        rotation_delta = output["rotation_delta"].flatten(0, 1)
-        rotation_delta[..., 0] += 1.0
-
-        pose_1_cam = Transform3d(device=translation_delta.device)
-        pose_2_cam = pose_1_cam.rotate(quaternion_to_matrix(rotation_delta)).translate(translation_delta)
-
-        pose1_world = pose_1_cam.compose(cam2world)
-        pose2_world = pose_2_cam.compose(cam2world)
-        translation_delta_world = pose2_world.get_matrix()[:, -1, :3] - pose1_world.get_matrix()[:, -1, :3]
-        rotation_delta_world = matrix_to_quaternion(pose1_world.inverse().compose(pose2_world).get_matrix()[:, :3, :3])
-
-        return translation_delta_world, rotation_delta_world
-
-    translation_pred, rotation_pred = get_world_translation_rotation(output)
-    translation_gt, rotation_gt = get_world_translation_rotation(act)
-
-    for k in ["world_vector", "rotation_delta", "gripper_closedness_action", "terminate_episode"]:
-        if k == "world_vector":
-            gt_list.append(translation_gt)
-            out_list.append(translation_pred)
-        elif k == "rotation_delta":
-            gt_list.append(rotation_gt)
-            out_list.append(rotation_pred)
-        else:
-            gt_list.append(act[k].flatten(0, 1))
-            out_list.append(output[k].flatten(0, 1))
-
-    gt = torch.cat(gt_list, dim=-1)
-    out = torch.cat(out_list, dim=-1)
-
-    criterion = F.mse_loss
-
-    loss = criterion(gt, out).detach()
-    loss_wv = criterion(gt[..., :3], out[..., :3]).detach()
-    loss_rota_delta = criterion(gt[..., 3:7], out[..., 3:7]).detach()
-    loss_grip_close = criterion(gt[..., 7:8], out[..., 7:8]).detach()
-    loss_term = criterion(gt[..., 8:].to(torch.float32), out[..., 8:].to(torch.float32)).detach()
-
-    return loss, loss_wv, loss_rota_delta, loss_grip_close, loss_term
-
-
-def calc_terminate_recall(labels, outputs):
-
-    labels = ~(labels[:, :, -1].to(torch.bool))
-    outputs = ~(outputs[:, :, -1].to(torch.bool))
-
-    TP = ((labels == outputs) & (outputs)).sum()
-    TP_and_FN = labels.sum()
-    return TP, TP_and_FN
-
-
-def Check_Wrong_tokens(labels, pred):
-
-    wrong_map = ~(labels == pred)
-    wrong_indices = torch.nonzero(wrong_map)
-    print(wrong_indices, flush=True)
-    return
-
-
-def calc_acc_and_reduce(pred, label):
-    acc = (pred == label).sum() / (label.numel())
-    torch.distributed.all_reduce(acc, op=torch.distributed.ReduceOp.AVG)
-    return acc
 
 
 def reduce_and_average(data):
@@ -235,160 +140,6 @@ def param_groups_weight_decay(model: nn.Module, lr=1e-4, weight_decay=1e-5, no_w
     ]
 
 
-
-def evaluate_act(network, eval_dataloader, DEVICE, tokens_per_context_image, 
-                 tokens_per_step, criterion, writer, args, total_iter_num, noise_scheduler,
-                 generator, num_pred_action, cfg, clipmodel=None, clip_tokenizer=None):
-    with torch.no_grad():
-        network.eval()
-        eval_loss_total = 0.0
-        eval_loss_per_iter = 0.0
-
-        acc_total = 0.0
-        loss_l2_total = 0.0
-        TP_total = 0.0
-        TP_and_FN_total = 0.0
-
-        mse_loss_world_vector_total = 0.0
-        mse_loss_rotation_delta_total = 0.0
-        acc_gripper_closedness_total = 0.0
-        acc_terminate_total = 0.0
-
-        loss_wv_l2_total = 0.0
-        loss_rota_delta_l2_total = 0.0
-        loss_grip_close_l2_total = 0.0
-        loss_term_l2_total = 0.0
-        i = 0
-        gripper_idx = 7
-        if cfg.trajectory_dim == 7:
-            gripper_idx = 6
-        for i, batch in enumerate(eval_dataloader):
-            if i % 50 == 0:
-                print(f"{i}/{len(eval_dataloader)}")
-
-            obs_dict = batch["observation"]
-            act_dict = batch["action"]
-            obs_new = dict_to_gpu(obs_dict, DEVICE)
-            act_new = dict_to_gpu(act_dict, DEVICE)
-            camera_extrinsic_cv = batch["observation"]["camera_extrinsic_cv"].flatten(0, 2).to(DEVICE, non_blocking=True)
-            if cfg.dataset.use_baseframe_action:
-                camera_extrinsic_cv = torch.eye(4).to(DEVICE).unsqueeze(0).repeat(camera_extrinsic_cv.shape[0], 1, 1)
-
-
-
-            trajectory_gt = get_gt_trajectory(cfg, act_new)
-
-            # set_obs_poses(cfg, obs_new, act_new)
-            cond_data = torch.zeros(size=(len(trajectory_gt), trajectory_gt.shape[1], trajectory_gt.shape[-1]), device=DEVICE, dtype=trajectory_gt.dtype)
-
-            if cfg.dataname in ['rlbench', 'calvin', 'calvin_mc', 'metaworld']:
-                inputs = clip_tokenizer(text=batch['instruction'], return_tensors="pt", max_length=77, padding="max_length", truncation=True)
-                for key in inputs:
-                    inputs[key] = inputs[key].to(DEVICE)
-
-                ccontext = clipmodel.text_model(**inputs)[0].squeeze(0).detach()
-                ccontext = ccontext[:, None,...].repeat(batch["observation"]['image'].shape[1], obs_new['image'].shape[1], 1, 1)
-
-                obs_new['natural_language_embedding'] = ccontext            
-            
-            trajectory = torch.randn(
-                size=cond_data.shape, 
-                dtype=cond_data.dtype,
-                device=cond_data.device,
-                generator=None)
-
-            if cfg.dataname in ['calvin', 'rlbench', 'calvin_mc']:
-                if cfg.use_action_head_diff in [2, 4, 5]:
-                    if hasattr(network, 'module'):
-                        model_output = network_module.inference_withfeats(obs_new, num_pred_action=num_pred_action,cfg=0)
-                    else:
-                        model_output = network.inference_withfeats(obs_new, num_pred_action=num_pred_action,cfg=0)
-                else:
-                    if hasattr(network, 'module'):
-                        model_output = network_module.inference(obs_new, num_pred_action=num_pred_action, abs_pose=1, cfg=0) # abs_pose here indicates we do not scale the data.
-                    else:
-                        model_output = network.inference(obs_new, num_pred_action=num_pred_action, abs_pose=1, cfg=0)
-                if cfg.dataname in ['rlbench']:
-                    #  'gripper_closedness_action': trajectory[...,7:8],
-                    # 'terminate_episode': trajectory[...,8:]
-                    output = torch.cat([model_output["world_vector"].cpu(), model_output["rotation_delta"].cpu(),model_output["gripper_closedness_action"].cpu(), model_output["terminate_episode"].cpu(),], dim=-1).cuda()
-                else:
-                    output = torch.cat([model_output["world_vector"].cpu(), model_output["rotation_delta"].cpu(),model_output["gripper_closedness_action"].cpu(),], dim=-1).cuda()
-                trajectory = output
-            else:
-                for t in noise_scheduler.timesteps:
-
-                    model_output = network(obs_new, act_new, noisy_action_tokens=trajectory, 
-                                        timesteps=t.repeat(len(trajectory)), num_pred_action=num_pred_action)
-                    # model_output = network(obs_new, noisy_trajectory=trajectory, timesteps=t)
-                    b, num, dim = model_output.shape
-                    trajectory = noise_scheduler.step(model_output, t, 
-                                                        trajectory[...,:,:], generator=generator,).prev_sample
-                    
-            
-
-
-                trajectory = trajectory[:, -num_pred_action:]
-            trajectory_gt = trajectory_gt[:, -num_pred_action:]
-            
-            eval_loss_per_iter = reduce_and_average(F.mse_loss(trajectory[:, :, :3], trajectory_gt[:, :, :3]))
-            mse_world_vector = reduce_and_average(F.mse_loss(trajectory[:, :, :3], trajectory_gt[:, :, :3]))
-            mse_rotation_delta = reduce_and_average(F.mse_loss(trajectory[:, :, 3:gripper_idx], trajectory_gt[:, :, 3:gripper_idx]))
-            acc_gripper_closedness = calc_acc_and_reduce((trajectory[:, :, gripper_idx] > 0.).float() * 2 - 1, trajectory_gt[:, :, gripper_idx])
-            mse_terminate = reduce_and_average(F.mse_loss(trajectory[:, :, -1] > 0.5, trajectory_gt[:, :, -1]))
-
-            eval_loss_total += eval_loss_per_iter
-
-
-            mse_loss_world_vector_total += mse_world_vector
-            mse_loss_rotation_delta_total += mse_rotation_delta
-            acc_gripper_closedness_total += acc_gripper_closedness
-            acc_terminate_total += mse_terminate
-
-            eval_loss_per_iter = 0
-            if i > 30:
-                break
-
-        eval_loss_total /= i + 1
-        acc_total /= i + 1
-        loss_l2_total /= i + 1
-        TP_total /= i + 1
-        TP_and_FN_total /= i + 1
-
-        mse_loss_world_vector_total /= i + 1
-        mse_loss_rotation_delta_total /= i + 1
-        acc_gripper_closedness_total /= i + 1
-        acc_terminate_total /= i + 1
-
-        # loss_wv_l2_total /= i + 1
-        # loss_grip_close_l2_total /= i + 1
-        # loss_rota_delta_l2_total /= i + 1
-        # loss_term_l2_total /= i + 1
-        print(args.rank)
-        if args.rank == 0:
-
-            print(
-                "EVAL: loss_total: {}, world_vector: {}, rotation_delta: {}, gripper_closedness: {}, Terminate_recall: {}".format(
-                    eval_loss_total, mse_loss_world_vector_total, mse_loss_rotation_delta_total, acc_gripper_closedness_total, acc_terminate_total
-                )
-            )
-            logging.info(
-                "EVAL: loss_total: {}, world_vector: {}, rotation_delta: {}, gripper_closedness: {}, Terminate_recall: {}".format(
-                    acc_total, mse_loss_world_vector_total, mse_loss_rotation_delta_total, acc_gripper_closedness_total, acc_terminate_total
-                )
-            )
-            if writer is not None:
-                # writer.add_scalar("EVAL_MSE_loss", acc_total, total_iter_num)
-                # writer.add_scalar("EVAL_MSELoss", loss_l2, total_iter_num)
-                writer.add_scalar("EVAL_CrossEntropyLoss", eval_loss_total, total_iter_num)
-                writer.add_scalar("EVAL_MSE_WorldVector", mse_loss_world_vector_total, total_iter_num)
-                writer.add_scalar("EVAL_MSE_RotationDelta", mse_loss_rotation_delta_total, total_iter_num)
-                writer.add_scalar("EVAL_Acc_GripperClosed", acc_gripper_closedness_total, total_iter_num)
-                writer.add_scalar("EVAL_Acc_Terminate", acc_terminate_total, total_iter_num)
-    
-    pass
-
-
 @hydra.main(version_base=None, config_path=os.path.join(os.path.dirname(__file__), "..", "config"), config_name="config_diffusion_nowrist")
 def train(cfg: DictConfig):
 
@@ -397,10 +148,7 @@ def train(cfg: DictConfig):
     torch.backends.cudnn.allow_tf32 = True
 
 
-    # parser = get_args_parser()
-    # args = parser.parse_args()
-    # print(args)
-    # args = None
+    # This is too tricy for DDP in our GPU server. You should revise this part according to your machines.
     args = argparse.Namespace()
     print(args)
     init_distributed_mode(args, cfg)
@@ -450,20 +198,21 @@ def train(cfg: DictConfig):
         from Dataset_Sim.SimDataset import SimDatasetDumpy 
         train_dataset = SimDatasetDumpy()
         eval_dataset = SimDatasetDumpy()
-    elif cfg.dataname == 'calvin_mc':
+    elif cfg.dataname in ['calvin_mc', 'calvin']:
+        # This is based on GR-MG.
         if cfg.wrap_grmg_data == 0:
             act_len = cfg.dataset.traj_length + cfg.num_pred_action - 1
             seq_len=cfg.dataset.num_given_observation
-        elif cfg.wrap_grmg_data == 1:
+        elif cfg.wrap_grmg_data == 1:  # single image observation
             act_len = cfg.num_pred_action
             seq_len=cfg.dataset.num_given_observation
             seq_len=1
-        elif cfg.wrap_grmg_data == 2:
+        elif cfg.wrap_grmg_data == 2:  # two image observation
             seq_len=cfg.dataset.num_given_observation
             seq_len=2
             act_len = cfg.num_pred_action
         train_dataset = CalvinDataset_Policy(
-            's3://Anonymous/',
+            'path for your calvin dataset',
             seq_len=seq_len,
             act_len=act_len,
             forward_n_max=25,
@@ -474,7 +223,7 @@ def train(cfg: DictConfig):
             task_num=10000,
             wrap_grmg_data=cfg.wrap_grmg_data)
         eval_dataset = CalvinDataset_Policy(
-            's3://Anonymous/',
+            'path for your calvin dataset',
             seq_len=seq_len,
             act_len=act_len,
             forward_n_max=25,
@@ -484,47 +233,6 @@ def train(cfg: DictConfig):
             use_play=False,
             task_num=10000,
             wrap_grmg_data=cfg.wrap_grmg_data)
-    elif cfg.dataname == 'calvin':
-        # 
-        train_dataset = CalvinDataset(
-            root='s3://Anonymous/{}/training'.format(cfg.taskname),
-            taskvar=[
-                ("A", 0), ("B", 0), ("C", 0), ("D", 0),
-            ],
-            max_episode_length=cfg.dataset.traj_length,
-            cache_size=0,
-            max_episodes_per_task=-1,
-            num_iters=600000,
-            training=True,
-            image_rescale=tuple(
-                float(x) for x in "0.75,1.25".split(",")
-            ),
-            return_low_lvl_trajectory=False,
-            dense_interpolation=1,
-            interpolation_length=20,
-            relative_action=bool(1)
-        )
-        eval_dataset = CalvinDataset(
-            root='s3://Anonymous/{}/validation'.format(cfg.taskname),
-            taskvar=[
-                ("A", 0), ("B", 0), ("C", 0), ("D", 0),
-            ],
-            max_episode_length=cfg.dataset.traj_length,
-            cache_size=0,
-            max_episodes_per_task=-1,
-            num_iters=600000,
-            training=True,
-            image_rescale=tuple(
-                float(x) for x in "0.75,1.25".split(",")
-            ),
-            return_low_lvl_trajectory=False,
-            dense_interpolation=1,
-            interpolation_length=20,
-            relative_action=bool(1)
-        )
-        if 'DEBUG' in os.environ and int(os.environ['DEBUG']) == 2:
-            eval_dataset = train_dataset    
-        print('use calvin')
     else:
         raise("dataset not supported")
 
@@ -823,21 +531,6 @@ def train(cfg: DictConfig):
                 except Exception as e:
                     print(e)
                     pass
-
-            # *******************************************************#
-            # EVAL PART
-
-            # if total_iter_num % 5000 == 0 and total_iter_num != 0 and cfg.dataset.split_type != "overfit":
-
-            #     try:
-            #         evaluate_act(network, eval_dataloader, DEVICE, None, 
-            #                  None, criterion, writer, args, total_iter_num,
-            #                  network_module.noise_scheduler, None, cfg.num_pred_action, cfg, clipmodel=clipmodel, clip_tokenizer=clip_tokenizer)
-            #     except Exception as e:
-            #         import traceback
-            #         traceback.print_exc()
-            #         print(e)
-            #     network.train()
 
             if total_iter_num % cfg.close_loop_eval.eval_iters == 0 and total_iter_num != 0 and cfg.use_close_loop_eval : 
             # if total_iter_num % 5000 == 0 and cfg.use_close_loop_eval : 

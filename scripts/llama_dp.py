@@ -417,17 +417,6 @@ class RobotTransformerNet(nn.Module):
         feats = None
 
 
-        if self.use_action_head_diff == 3:
-            t = self.noise_scheduler_eval.timesteps[0].cuda()
-            trajectory = self(obs, act=None, obs_tokens=None, act_tokens=None, noisy_action_tokens = trajectory, timesteps=t.repeat(len(trajectory)), num_pred_action=num_pred_action, ret_feats=False)
-            return {'world_vector': trajectory[...,:3],
-                    'rotation_delta': trajectory[...,3:6],
-                    'gripper_closedness_action': trajectory[...,6:7],
-                    'terminate_episode': torch.zeros_like(trajectory[...,6:7])  # useless
-            }
-            pass
-
-        # print('ddim 100 step, inference_withfeats')
         for t in self.noise_scheduler_eval.timesteps:
             # 1. apply conditioning
             # trajectory[condition_mask] = cond_data[condition_mask]
@@ -500,7 +489,7 @@ class RobotTransformerNet(nn.Module):
             }
 
         else:
-            # if it is quaternion
+            # if it is quaternion, only for Maniskill2
             return {'world_vector': (trajectory[...,:3] + 1)*0.0768 - 0.0768,
                     'rotation_delta': (trajectory[...,3:7] + 1)*0.0768 - 0.0768,
                     'gripper_closedness_action': trajectory[...,7:8],
@@ -593,6 +582,7 @@ class RobotTransformerNet(nn.Module):
                     'terminate_episode': torch.zeros_like(trajectory[...,6:7])  # useless
             }
         else:
+            # if it is quaternion, only for Maniskill2
             return {'world_vector': (trajectory[...,:3] + 1)*0.0768 - 0.0768,
                     'rotation_delta': (trajectory[...,3:7] + 1)*0.0768 - 0.0768,
                     'gripper_closedness_action': trajectory[...,7:8],
