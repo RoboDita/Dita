@@ -254,12 +254,17 @@ class RobotTransformerNet(nn.Module):
             print('noise_scheduler_eval', 'ddim')     
         else:
             self.noise_scheduler = DDPMScheduler(
-            beta_schedule = 'squaredcos_cap_v2',
-            num_train_timesteps = 100,
-            prediction_type = prediction_type,
+                beta_schedule = 'squaredcos_cap_v2',
+                num_train_timesteps = 100,
+                prediction_type = prediction_type,
             )
 
-            self.noise_scheduler_eval = self.noise_scheduler
+            self.noise_scheduler_eval = DDIMScheduler(
+                beta_schedule = 'squaredcos_cap_v2',
+                num_train_timesteps = 100,
+                prediction_type = prediction_type,
+            )
+
 
     @property
     def attention_scores(self):
@@ -345,27 +350,12 @@ class RobotTransformerNet(nn.Module):
                 if ret_feats:
                     return output.view(b, t, c), output_logits
                 return output.view(b, t, c)
-            elif self.use_action_head_diff in [5]:
-                # token diffusion head
-                  
-                b, t, c = noisy_action_tokens.shape
-                noisy_action_tokens_t = noisy_action_tokens.flatten(1,2)
-
-                noisy_action_tokens1 = F.pad(noisy_action_tokens_t, (0,self.token_embedding_size -noisy_action_tokens_t.shape[-1]), mode='constant', value=0)
-                output = self.diffuse_action_head(noisy_action_tokens1, output_logits[:, 0], timestep_tokens.repeat(1, t, 1)[:, 0])
-                if ret_feats:
-                    return output.view(b, t, c), output_logits
-                return output.view(b, t, c)
             else:
                 raise Exception("not implement")
         elif noisy_action_tokens is not None and timesteps is not None:
             timestep_tokens = self.time_emb(timesteps)
 
             timestep_tokens = timestep_tokens[:,None,:]
-
-            if 'REG_FINETUNE' in os.environ:
-                timestep_tokens = torch.zeros_like(timestep_tokens)
-                noisy_action_tokens = torch.zeros_like(noisy_action_tokens)
 
             obs_tokens = context_image_tokens[:, :t-num_pred_action+1].flatten(1, 2)
             
@@ -510,6 +500,7 @@ class RobotTransformerNet(nn.Module):
             }
 
         else:
+            # if it is quaternion
             return {'world_vector': (trajectory[...,:3] + 1)*0.0768 - 0.0768,
                     'rotation_delta': (trajectory[...,3:7] + 1)*0.0768 - 0.0768,
                     'gripper_closedness_action': trajectory[...,7:8],
@@ -547,7 +538,7 @@ class RobotTransformerNet(nn.Module):
             generator=None)
 
         num_inference_steps = self.num_inference_steps
-        if 'DENOISING_STEPS' in os.environ:
+        if 'DENOISING_STEPS' in os.environ: # This is only for ablation study
             num_inference_steps = int(os.environ['DENOISING_STEPS'])
 
         self.noise_scheduler_eval.set_timesteps(num_inference_steps)
