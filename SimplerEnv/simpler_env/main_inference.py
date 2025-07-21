@@ -5,6 +5,7 @@ import numpy as np
 import tensorflow as tf
 
 
+from scripts import llama_dp
 from simpler_env.evaluation.argparse import get_args
 from simpler_env.evaluation.maniskill2_evaluator import maniskill2_evaluator
 
@@ -108,7 +109,7 @@ if __name__ == "__main__":
         }}
         sequence_length = 32
         num_pred_action = 31
-        network = RT1Net(
+        network = RobotTransformerNet(
             output_tensor_spec=default_action_spec,
             vocab_size=cfg.model.vocab_size,
             time_sequence_length=sequence_length,
