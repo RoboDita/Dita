@@ -1,0 +1,21 @@
+defaults:
+  - /callbacks/rollout/tasks@tasks: new_playtable_tasks
+  - /annotations@val_annotations: new_playtable_validation
+_target_: calvin_agent.rollout.rollout.Rollout
+_recursive_: false
+env_cfg:
+  _target_: calvin_agent.wrappers.calvin_env_wrapper.CalvinEnvWrapper
+skip_epochs: 1
+rollout_freq: 1
+video: true
+num_rollouts_per_task: 10
+check_percentage_of_batch: 1  # which percentage of sequences do we want to check for possible tasks
+ep_len: 120
+empty_cache: true
+log_video_to_file: false
+save_dir: ./videos
+add_goal_thumbnail: true
+min_window_size: ${datamodule.datasets.vision_dataset.min_window_size}
+max_window_size: ${datamodule.datasets.vision_dataset.max_window_size}
+id_selection_strategy: "select_longest"
+lang_folder: ${datamodule.datasets.lang_dataset.lang_folder}

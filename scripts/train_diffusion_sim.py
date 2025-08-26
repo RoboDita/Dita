@@ -9,9 +9,7 @@ import time
 
 
 from Dataset_VLA.calvin_dataset import CalvinDataset_Policy
-from Dataset_VLA.dataset_calvin import CalvinDataset
 from utils import resume_or_load_checkpoint
-from utils.data_utils import add_noise_to_euler, add_noise_to_quaternion, add_noise_to_translation
 from utils.ddp_utils import init_distributed_mode
 from functools import partial
 current_path = os.getcwd()
@@ -160,6 +158,42 @@ def train(cfg: DictConfig):
         rank = int(os.environ["RANK"])
     else:
         rank = 0
+
+    if args.distributed:
+        DEVICE = "cuda:" + str(os.environ["LOCAL_RANK"]) if torch.cuda.is_available() else "cpu"
+    else:
+        DEVICE = 'cuda'
+    # DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    time_sequence_length = cfg.num_pred_action if 'wrap_grmg_data' in cfg and cfg.wrap_grmg_data == 1 else cfg.dataset.traj_length
+    if 'wrap_grmg_data' in cfg and cfg.wrap_grmg_data == 2:
+        time_sequence_length = cfg.num_pred_action + 1
+    network = RobotTransformerNet(
+        output_tensor_spec=None,
+        input_size='('+str(cfg.input_size)+','+str(cfg.input_size)+')' if 'input_size' in cfg else None,
+        vocab_size=cfg.model.vocab_size,
+        # time_sequence_length=cfg.dataset.traj_length,
+        time_sequence_length=time_sequence_length,
+        num_layers=cfg.model.num_layers,
+        dropout_rate=cfg.model.dropout_rate,
+        include_prev_timesteps_actions=cfg.model.include_prev_timesteps_actions,
+        freeze_backbone=cfg.model.freeze_backbone,
+        use_qformer=cfg.model.use_qformer,
+        use_wrist_img=cfg.model.use_wrist_img,
+        use_depth_img=cfg.model.use_depth_img,
+        prediction_type=cfg.prediction_type,
+        dim_align_type=cfg.dim_align_type if 'dim_align_type' in cfg else 0,
+        use_action_head_diff=cfg.use_action_head_diff,
+        scheduler_type=cfg.scheduler_type,
+        num_inference_steps=cfg.num_inference_steps,
+        trajectory_dim=cfg.trajectory_dim,
+        vit_forward_version = cfg.model.vit_forward_version if 'vit_forward_version' in cfg.model else None,
+    )
+    if 'eval_only' in cfg and cfg.eval_only:
+        start_epoch, total_iter_num, checkpoint_path, tensorboard_path, log_path, run_dir = resume_or_load_checkpoint(cfg, network, None, None) 
+        close_loop_eval_ddp(cfg, args, rank, None, DEVICE, network, 0, './', None, )
+        exit()
+
     print(cfg.dataset.data_path)
     if cfg.dataname == 'maniskill':
         print(cfg.dataname)
@@ -264,36 +298,8 @@ def train(cfg: DictConfig):
         persistent_workers=True,
     )
 
-    if args.distributed:
-        DEVICE = "cuda:" + str(os.environ["LOCAL_RANK"]) if torch.cuda.is_available() else "cpu"
-    else:
-        DEVICE = 'cuda'
-    # DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    time_sequence_length = cfg.num_pred_action if 'wrap_grmg_data' in cfg and cfg.wrap_grmg_data == 1 else cfg.dataset.traj_length
-    if 'wrap_grmg_data' in cfg and cfg.wrap_grmg_data == 2:
-        time_sequence_length = cfg.num_pred_action + 1
-    network = RobotTransformerNet(
-        output_tensor_spec=None,
-        input_size='('+str(cfg.input_size)+','+str(cfg.input_size)+')' if 'input_size' in cfg else None,
-        vocab_size=cfg.model.vocab_size,
-        # time_sequence_length=cfg.dataset.traj_length,
-        time_sequence_length=time_sequence_length,
-        num_layers=cfg.model.num_layers,
-        dropout_rate=cfg.model.dropout_rate,
-        include_prev_timesteps_actions=cfg.model.include_prev_timesteps_actions,
-        freeze_backbone=cfg.model.freeze_backbone,
-        use_qformer=cfg.model.use_qformer,
-        use_wrist_img=cfg.model.use_wrist_img,
-        use_depth_img=cfg.model.use_depth_img,
-        prediction_type=cfg.prediction_type,
-        dim_align_type=cfg.dim_align_type if 'dim_align_type' in cfg else 0,
-        use_action_head_diff=cfg.use_action_head_diff,
-        scheduler_type=cfg.scheduler_type,
-        num_inference_steps=cfg.num_inference_steps,
-        trajectory_dim=cfg.trajectory_dim,
-        vit_forward_version = cfg.model.vit_forward_version if 'vit_forward_version' in cfg.model else None,
-    )
+
 
     params = param_groups_weight_decay(network, lr=cfg.lr, weight_decay=0.05, lr_mult=0.1, pretrained_weight_list=("image_tokenizer.tokenizer",))
 
@@ -378,9 +384,7 @@ def train(cfg: DictConfig):
     
         logging.basicConfig(filename=log_path+str(rank), level=logging.INFO, format="%(asctime)s : %(message)s")
 
-    if 'eval_only' in cfg and cfg.eval_only:
-        close_loop_eval_ddp(cfg, args, rank, eval_dataset, DEVICE, network, total_iter_num, run_dir, writer, )
-        exit()
+
     network.train()
     import signal, sys
 
@@ -547,7 +551,8 @@ def close_loop_eval_ddp(cfg, args, rank, eval_dataset, DEVICE, network, total_it
         else:                        
             close_loop_eval = getattr(importlib.import_module("close_loop_eval_diffusion"), "close_loop_eval_v2")
         close_loop_eval_start_time = time.time()
-        logging.info(f"begin eval: {args.rank}")
+        logging.info(f"begin eval: {rank}")
+        args.rank = rank
         with torch.no_grad():
             success_num, _, total_success_rate = close_loop_eval(
                             model=network,

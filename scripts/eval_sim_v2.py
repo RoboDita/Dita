@@ -41,10 +41,7 @@ from pytorch3d.transforms import (
 )
 from scipy.spatial.transform import Rotation as R
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.optim import create_optimizer_v2
-from timm.scheduler import create_scheduler_v2
-from timm.utils import NativeScaler
-from torch.utils.tensorboard import SummaryWriter
+
 
 
 def dict_to_gpu(dict, DEVICE):

@@ -24,7 +24,7 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, CLIPModel, CLIPProcessor
 from transforms3d.quaternions import mat2quat, quat2mat
 from moviepy.editor import ImageSequenceClip
-# import a s3 package as Client
+
 
 
 
@@ -612,6 +612,7 @@ def close_loop_eval_calvin(
     model=None,
     eval_data_list=None,
     args=None,
+    rank=0,
     rand_seed=0,
     json_repo="/xxx/xxx/share_data/Anonymous/maniskill2/demos/v0/rigid_body/",
     camera_coord=True,
@@ -625,7 +626,7 @@ def close_loop_eval_calvin(
     assert cfg is not None
     print('begin ....', root_folder)
     # import pdb;pdb.set_trace()
-    client = Client()
+
     np.set_printoptions(suppress=True, precision=3)
 
 
@@ -660,7 +661,7 @@ def close_loop_eval_calvin(
         return env
     model = CustomModel1(model,cfg)
     
-    env = make_env('/xxx/xxx/share_data/Anonymous/task_ABC_D/')
+    env = make_env('calvin_task/')
     evaluate_policy(model, env, epoch=0., eval_log_dir=os.path.join(root_folder, 'tmp_'+str(args.rank)), debug=0, rank=args.rank, each_length=test_episodes_num)
 
     return 0, None, 0

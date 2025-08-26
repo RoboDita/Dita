@@ -1,0 +1,52 @@
+defaults:
+  - callbacks: default
+  - datamodule: default
+  - model: sbert
+  - loss: default
+  - training: default_training
+  - trainer: play_trainer
+  - logger: wandb
+  - annotations@train_instructions: new_playtable
+  - annotations@val_instructions: new_playtable_validation
+
+  - override hydra/job_logging: colorlog
+  - override hydra/hydra_logging: colorlog
+  - override datamodule/observation_space: state_only
+  - override datamodule/datasets: vision_only
+#  - override datamodule/datasets/vision_dataset: vision_shm
+  - _self_
+
+seed: 42
+log_dir: ../../
+slurm: false
+eps: 0.01
+postprocessing: true
+lang_folder: "lang_annotations"
+with_text: false
+reannotate: false
+prior_steps_window: 16
+validation_scene: calvin_scene_D
+datamodule:
+  datasets:
+    vision_dataset:
+      min_window_size: 64
+      max_window_size: 64
+  shuffle_val: true
+
+hydra:
+  run:
+    dir: ${log_dir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}_lang_ann
+  sweep:
+    dir: ${log_dir}/runs/${now:%Y-%m-%d}/${now:%H-%M-%S}_lang_ann
+  job:
+    config:
+      override_dirname:
+        exclude_keys:
+          - log_dir
+          - datamodule.root_data_dir
+          - trainer.gpus
+          - model.tsne_plot
+          - datamodule.num_workers
+          - trainer.limit_train_batches
+          - trainer.limit_val_batches
+          - model.action_decoder.load_action_bounds
