@@ -136,12 +136,12 @@ torchrun --nproc_per_node=8 --nnodes=1 --node_rank=0  scripts/train_diffusion_ox
 | ours w/o pretraining | Static-RGB | 89.5% | 63.3%  |39.8%  |27.3%  |18.5%  | 2.38
 | ours | Static-RGB | **94.5%** | **82.5%**|  **72.8%**|  **61.3%**|  **50.0%**|  **3.61**| 
 
-Here is the [checkpoint for calvin (ABC->D)](https://drive.google.com/file/d/1L3X3op-oVNVVGEw8EdpiiedYp0I0gzXP/view?usp=sharing)
+Here is the checkpoint for calvin (ABC->D)[calvin_abc-d.pth](https://drive.google.com/file/d/1L3X3op-oVNVVGEw8EdpiiedYp0I0gzXP/view?usp=sharing)
 
 You can eval the model as follows,
 
 ```
-PYTHONPATH=. python3 scripts/train_diffusion_sim.py --config-name config_diffusion_calvin batch_size=32 dataset.traj_length=11 num_pred_action=10 task_name=calvin_exp dataset.num_given_observation=2 use_close_loop_eval=True close_loop_eval.test_episodes_num=32 taskname=task_ABC_D dataname=calvin_mc close_loop_eval.eval_iters=10000 close_loop_eval.test_episodes_num=250 scheduler_type=0 +wrap_grmg_data=2 +pretrained_path=/home/PJLAB/houzhi/Downloads/calvin_abc-d.pth +use_adjust_scheduler=true lr=0.0001 epoch=15 +min_lr_scale=0.01 scheduler.warmup_epochs=1 num_inference_steps=10 +eval_only=1
+PYTHONPATH=. python3 scripts/train_diffusion_sim.py --config-name config_diffusion_calvin batch_size=32 dataset.traj_length=11 num_pred_action=10 task_name=calvin_exp dataset.num_given_observation=2 use_close_loop_eval=True close_loop_eval.test_episodes_num=32 taskname=task_ABC_D dataname=calvin_mc close_loop_eval.eval_iters=10000 close_loop_eval.test_episodes_num=250 scheduler_type=0 +wrap_grmg_data=2 +pretrained_path=calvin_abc-d.pth +use_adjust_scheduler=true lr=0.0001 epoch=15 +min_lr_scale=0.01 scheduler.warmup_epochs=1 num_inference_steps=10 +eval_only=1
 ```
 
 The evaluation environment requirements are provided in calvin_python3.10_requirements.txt. You can refer this requirements to config your environment for calvin.
