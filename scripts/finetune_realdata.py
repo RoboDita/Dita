@@ -10,7 +10,7 @@ from utils import resume_or_load_checkpoint, ExponentialMovingAverage, EMA
 os.environ['LD_PRELOAD']='/xxx/xxx/Anonymous/lib/libtcmalloc_minimal.so.4.5.8'
 import argparse
 from dataclasses import dataclass
-import datetime
+
 from genericpath import isdir
 import logging
 import os
@@ -23,34 +23,28 @@ import datetime
 
 current_path = os.getcwd()
 sys.path.append(current_path)
-sys.path.append(os.path.join(current_path, "rt1_pytorch/openx_utils/"))
-sys.path.append(os.path.join(current_path, "../embodied_foundation/rt1_pytorch"))
-sys.path.append(os.path.join(current_path, "../embodied_foundation/openvla"))
+sys.path.append(os.path.join(current_path, "../Dita/utils/"))
+sys.path.append(os.path.join(current_path, "../Dita/scripts"))
+sys.path.append(os.path.join(current_path, "../Dita/openvla"))
 sys.path.append(os.path.join(current_path, "openvla/"))
 
-# export PYTHONPATH="$(pwd)":"$(pwd)/rt1_pytorch/openx_utils/":"$(pwd)/../":"$(pwd)/../embodied_foundation/rt1_pytorch":$PYTHONPATH
 
-
-# from openvla.openvla_warp.datasets_finetune import LabDataset_warp, DroidDataset_warp, Dumpy_warp
-# from openvla.prismatic.util.data_utils import PaddedCollatorForActionPrediction
-# from openvla.prismatic.vla.datasets.datasets import RLDSDataset
 from openvla.prismatic.util import set_global_seed
 from utils.ddp_utils import init_distributed_mode
 import hydra
 import torch
-from Dataset_HF.utils import get_action_spec
-# from Dataset_Sim.SimDataset import SimDataset
-from Dataset_Droid.DroidDataset_new import DroidDataset
-from Dataset_Lab.LabDataset import LabDataset
+from Dataset_Sim.SimDataset_discrete import get_action_spec
+
+
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import DictConfig, OmegaConf
-import importlib
-from torch.utils.data import DataLoader
+from omegaconf import DictConfig
+
+
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["AWS_ACCESS_KEY_ID"] = "Your Key"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "Your Key"
-# os.environ["AWS_REGION"] = "us-east-1"
+
 os.environ["S3_ENDPOINT"] = "Your EndPoint"
 os.environ["S3_USE_HTTPS"] = "0"
 os.environ["S3_VERIFY_SSL"] = "0"
@@ -59,18 +53,12 @@ import numpy as np
 import torch.distributed
 import torch.nn as nn
 import torch.nn.functional as F
-from pytorch3d.transforms import (
-    Transform3d,
-    matrix_to_euler_angles,
-    matrix_to_quaternion,
-    matrix_to_rotation_6d,
-    quaternion_to_matrix,
-)
-from scipy.spatial.transform import Rotation as R
+
+
 from timm.data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.optim import create_optimizer_v2
 from timm.scheduler import create_scheduler_v2
-from timm.utils import NativeScaler
+
 from torch.utils.tensorboard import SummaryWriter
 
 def set_seed(seed=42):  
@@ -106,8 +94,7 @@ def dict_to_gpu(dict, DEVICE):
             continue
         b, sample_per_episode = dict[k].shape[:2]
         gpu_dict[k] = dict[k].reshape(b * sample_per_episode, *dict[k].shape[2:]).to(DEVICE, non_blocking=True)
-        # if k == 'image':
-        #     gpu_dict[k] = gpu_dict[k].permute(0,1,3,4,2).contiguous()
+       
     return gpu_dict
 
 def unnormalize(x):
@@ -401,10 +388,7 @@ def train(cfg: DictConfig):
                 loss_a = F.l1_loss(logits[...,start_loss_action_chunk_idx:,:], target[..., start_loss_action_chunk_idx:,:],)
                 orig_loss = loss
 
-                # loss = loss * loss_mask.type(loss.dtype).cuda()
-                # loss_mask = torch.ones_like(loss).to(torch.bool)
-                # loss_mask[...,0] = 0
-                # import ipdb;ipdb.set_trace()
+                
                 running_loss = loss.detach()
                 from einops import rearrange, reduce
                 
@@ -416,11 +400,8 @@ def train(cfg: DictConfig):
 
                 loss.backward()
                 optimizer.step()
-                if "use_ema_model" in cfg and cfg.use_ema_model == True and total_iter_num % args.model_ema_steps == 0:
-                    network_ema.update()
-                # loss_scaler(loss, optimizer)
-
-                # loss_l2, loss_wv_l2, loss_rota_delta_l2, loss_grip_close_l2, loss_term_l2 = calc_l2_loss(act_new, detokenize_output, camera_extrinsic_cv)
+                
+               
                 loss_rota = running_loss[...,3:6].mean()
                 loss_world_vector = running_loss[...,:3].mean()
                 loss_grip_close = running_loss[...,6:7].mean()

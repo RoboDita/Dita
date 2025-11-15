@@ -9,21 +9,21 @@ import time
 
 current_path = os.getcwd()
 sys.path.append(current_path)
-sys.path.append(os.path.join(current_path, "rt1_pytorch/openx_utils/"))
-sys.path.append(os.path.join(current_path, "../embodied_foundation/rt1_pytorch"))
-# export PYTHONPATH="$(pwd)":"$(pwd)/rt1_pytorch/openx_utils/":"$(pwd)/../":"$(pwd)/../embodied_foundation/rt1_pytorch":$PYTHONPATH
+sys.path.append(os.path.join(current_path, "utils/"))
+sys.path.append(os.path.join(current_path, "../Dita/scripts"))
+
 
 import hydra
 import torch
-from Dataset_HF.utils import get_action_spec
-from Dataset_Sim.SimDataset import SimDataset
-from RT1_llama_dp import RT1Net
+from Dataset_Sim.SimDataset_discrete import get_action_spec
+
+from llama_dp import RobotTransformerNet
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
 import importlib
 from torch.utils.data import DataLoader
 
-from diffusion.normalizer import LinearNormalizer
+
 
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -377,7 +377,7 @@ def train(cfg: DictConfig):
     # DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
     action_spec = get_action_spec(cfg.action_spec, DEVICE)
 
-    network = RT1Net(
+    network = RobotTransformerNet(
         output_tensor_spec=action_spec,
         vocab_size=cfg.model.vocab_size,
         time_sequence_length=cfg.model.time_sequence_length,

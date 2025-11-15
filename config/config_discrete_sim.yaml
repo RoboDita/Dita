@@ -1,0 +1,73 @@
+epoch: 100000
+iter_per_epoch: 72000
+task_name: 'test'
+tensorboard_output_dir: 'your own path'
+batch_size: 8
+gradient_accumultation_step: 1
+eval_per_iter : 5000
+ckpt_path: None
+
+lr: 0.0001
+
+
+
+
+optimizer:
+  name: 'adamw'
+  weight_decay: 0.05
+  betas_0: 0.9
+  betas_1: 0.95
+  
+scheduler:
+  sched: 'step'
+  warmup_lr: 0
+  warmup_epochs: 1
+  num_epochs: 100000
+  decay_epochs: 100000
+  step_on_epochs: false
+
+defaults:
+  - dataset: sim_more_action
+  - model:  llama_discrete
+  - _self_
+
+action_spec:
+  world_vector: 
+    tensor: 3
+    minimum: -0.0768
+    maximum: 0.0768
+  rotation_delta:
+    tensor: 4
+    minimum: -0.0768
+    maximum: 0.0768
+  gripper_closedness_action:
+    tensor: 1
+    minimum: -1.0
+    maximum: 1.0
+  terminate_episode:
+    tensor: 3
+    minimum: 0
+    maximum: 1
+
+use_close_loop_eval: true
+
+close_loop_eval:
+ 
+  test_episodes_num: 175
+  eval_num:
+    PickCube-v0 : 100
+    PickSingleYCB-v0 : 100
+    StackCube-v0 : 100
+    PickClutterYCB-v0: 100
+    AssemblingKits-v0: 100
+    PegInsertionSide-v0: 100
+    PickSingleEGAD-v0: 100
+  exec_steps: 1
+
+hydra:
+  job_logging:
+    root:
+      level: INFO
+
+use_adjust_scheduler: true
+min_lr_scale: true

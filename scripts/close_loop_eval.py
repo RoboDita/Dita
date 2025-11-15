@@ -1,9 +1,7 @@
 import argparse
 import logging
 import os
-
-from utils.data_utils import get_pose_cam
-os.environ["MS2_ASSET_DIR"] = "/xxx/xxx/share_data/Anonymous/maniskill2/assets"
+os.environ["MS2_ASSET_DIR"] = "/xxx/xxx/share_data/Anonymous/maniskill2/assets" # maniskill2 assets path
 import pickle
 import sys
 import time
@@ -28,10 +26,11 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, CLIPModel, CLIPProcessor
 from transforms3d.quaternions import mat2quat, quat2mat
 from moviepy.editor import ImageSequenceClip
-# import a s3 package as Client
+from petrel_client.client import Client
 from collections import defaultdict
-from RT1 import RT1Net
 import nltk
+from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection 
+
 
 
 extrinsics_pool = np.asarray([[[-4.4721359e-01, 8.9442706e-01,-1.4901161e-08, -4.4721358e-02], [ 6.6666663e-01, 3.3333331e-01,-6.6666663e-01, 1.3333333e-01], 
@@ -73,7 +72,7 @@ NATURAL_INSTRUCTIONS = {
     # "PandaAvoidObstacles-v0": "Navigate the (Panda) robot arm through a region of dense obstacles and move the end-effector to a goal pose",
     # "PickClutterYCB-v0": "Pick up an object from a clutter of 4-8 YCB objects",
 }
-CAMERA_POOL_FILE = "/xxx/xxx/share_data/Anonymous/maniskill2/camera_pool_300k.npz"
+CAMERA_POOL_FILE = "/xxx/xxx/share_data/Anonymous/maniskill2/camera_pool_300k.npz" # The Camera pool discribed in the OC-VLA paper
 camera_pool = np.load(CAMERA_POOL_FILE)["cameras"]
 
 
@@ -104,20 +103,20 @@ class PytorchInference(nn.Module):
 
         self.model = model
         try:
-            if hasattr(self.model, 'module'):
-                self.sequence_length = self.model.module.time_sequence_length
-                self.use_wrist_img = self.model.module.use_wrist_img
-                self.use_depth_img = self.model.module.use_depth_img
-            else:
-                self.sequence_length = self.model.time_sequence_length
-                self.use_wrist_img = self.model.use_wrist_img
-                self.use_depth_img = self.model.use_depth_img
+            self.use_segmentation = self.model.module.use_segmentation
         except:
-            self.use_depth_img = False
-            self.use_wrist_img = False
+            self.use_segmentation = False
+        self.sequence_length = self.model.module.time_sequence_length
+        self.use_wrist_img = self.model.module.use_wrist_img
+        self.use_depth_img = self.model.module.use_depth_img
+        try:
+            self.text_max_length = self.model.module.text_max_length
+        except:
+            self.text_max_length = 77
         self.model.eval()
         self.model_input = []
         self.model_input_tranformed = []
+        # self.img_orig = []
         self.observation = []
         self.model_input_wrist = []
         self.model_input_depth = []
@@ -133,64 +132,44 @@ class PytorchInference(nn.Module):
                 # torchvision.transforms.Normalize(OPENAI_CLIP_MEAN, OPENAI_CLIP_STD)
             ]
         )
-        self.data_transform_eval = torchvision.transforms.Compose(
-                [
-                    torchvision.transforms.ToTensor(),
-                    # v2.RandomResizedCrop(size=(224, 224), antialias=True),
-                    
-                    torchvision.transforms.CenterCrop(size=(480, 480)),
-                    torchvision.transforms.Resize((224, 224), antialias=True),
-                    # torchvision.transforms.RandomHorizontalFlip(p=0.5),
-                    
-                    torchvision.transforms.Normalize(IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD),
-                    # torchvision.transforms.Pad(padding = (80,1,80,0)),
-                    # torchvision.transforms.Resize((224,224), antialias=True)
-                ]
-            )
-
         self.clip_tokenizer = AutoTokenizer.from_pretrained(
-            "openai/clip-vit-large-patch14", use_fast=False
+            "/mnt/petrelfs/share_data/houzhi/clip-vit-large-patch14/", use_fast=False
         )
         self.clip_text_encoder = CLIPModel.from_pretrained(
-            "openai/clip-vit-large-patch14"
+            "/mnt/petrelfs/share_data/houzhi/clip-vit-large-patch14/"
         ).text_model
 
         self.to(self.device)
         self.frame = 0
 
         self.exec_steps = exec_steps
-        if hasattr(self.model, 'module') and isinstance(self.model.module, RT1Net) or isinstance(self.model, RT1Net):
-            import tensorflow_hub
-            self.USE_model = tensorflow_hub.KerasLayer('/xxx/xxx/Anonymous/.cache/huggingface/hub/models--Dimitre--universal-sentence-encoder/snapshots/9b553ff4389970e39a39d15b1fa3bba76f57b356')
         # model_output: dx dy dz dqw dqx dqy dqz terminate
 
-    def set_natural_instruction(self, instruction: str):
-        if hasattr(self.model, 'module') and isinstance(self.model.module, RT1Net) or isinstance(self.model, RT1Net):
-            
-            text_embeddings = self.USE_model([instruction]).numpy()
-            text_embeddings = torch.tensor(text_embeddings)[0].to(self.device)
-        else:
-            # set_obs_poses(cfg, obs_new, act_new)
-            inputs = self.clip_tokenizer(text=instruction, return_tensors="pt", max_length=77, padding="max_length")
-            for key in inputs:
-                inputs[key] = inputs[key].to(self.device)
-            with torch.no_grad():
-                text_embeddings = self.clip_text_encoder(**inputs)[0].squeeze(0)
+        if self.use_segmentation:
+            self.segmentation_model = AutoModelForZeroShotObjectDetection.from_pretrained("IDEA-Research/grounding-dino-base", local_files_only = True).to(self.device)
+            self.segmentation_processor = AutoProcessor.from_pretrained("IDEA-Research/grounding-dino-base", trust_remote_code=True, local_files_only = True)
+
+    def set_natural_instruction(self, instruction: str, seg_obj = None):
+        inputs = self.clip_tokenizer(text=instruction, return_tensors="pt", max_length=self.text_max_length, padding="max_length")
+        for key in inputs:
+            inputs[key] = inputs[key].to(self.device)
+        with torch.no_grad():
+            text_embeddings = self.clip_text_encoder(**inputs)[0].squeeze(0)
         self.instruction = text_embeddings
-        self.natural_instruction = preprocess_instruction(instruction)
+        # self.natural_instruction = preprocess_instruction(instruction)
+        self.natural_instruction = None
+        if seg_obj is not None:
+            self.natural_instruction = seg_obj + '.'
 
     def set_eef_pose(self, eef_pose):
         self.eef_pose = eef_pose
 
-    def set_observation(self, rgb, depth=None, wrist=None, is_real_eval=False):
+    def set_observation(self, rgb, depth=None, wrist=None):
         assert (rgb >= 0).all() and (rgb <= 255).all()
         self.observation.append(rgb)
+        # import ipdb;ipdb.set_trace()
+        # self.img_orig.append(torch.tensor(rgb).to(self.device, non_blocking=True))
         if self.model_input == []:
-            if is_real_eval:
-                rgb_data = self.data_transform_eval(rgb).to(self.device, non_blocking=True)
-            else:
-                rgb = torch.tensor(rgb).to(self.device, non_blocking=True)
-                rgb_data = self.data_transform((rgb / 255.0).permute(2, 0, 1).contiguous())
 
             rgb = torch.tensor(rgb).to(self.device, non_blocking=True)
             if not self.use_language_instruction:
@@ -202,12 +181,13 @@ class PytorchInference(nn.Module):
             if self.use_language_instruction:
                 self.model_input_tranformed = rgb_data_transformed.unsqueeze(0)
         else:
-            if is_real_eval:
-                rgb_data = self.data_transform_eval(rgb).to(self.device, non_blocking=True)
-            else:
-                rgb = torch.tensor(rgb).to(self.device, non_blocking=True)
-                rgb_data = self.data_transform((rgb / 255.0).permute(2, 0, 1).contiguous())
 
+            rgb = torch.tensor(rgb).to(self.device, non_blocking=True)
+            if not self.use_language_instruction:
+                rgb_data = self.data_transform((rgb / 255.0).permute(2, 0, 1).contiguous())
+            else:
+                rgb_data = rgb
+                rgb_data_transformed = self.data_transform((rgb / 255.0).permute(2, 0, 1).contiguous())
             self.model_input = torch.cat((self.model_input, rgb_data.unsqueeze(0)), dim=0)
             self.model_input = self.model_input[-self.sequence_length :]
 
@@ -258,6 +238,7 @@ class PytorchInference(nn.Module):
         self.model_input_wrist = []
         self.model_input_depth = []
         # self.wrist_observation = []
+        # self.img_orig = []
         self.frame = 0
 
     def save_video(self, fpath):
@@ -306,79 +287,75 @@ class PytorchInference(nn.Module):
 
         return target_ee_pose_at_camera
 
-    def inference(self, extrinsics=None, obs_pose=None, ret_7=False):
+    def inference(self, extrinsics=None):
 
         obs = {"image": self.model_input[-self.sequence_length :].unsqueeze(0)}
         if self.use_wrist_img:
             obs["wrist_image"] = self.model_input_wrist[-self.sequence_length :].unsqueeze(0)
         if self.use_depth_img:
             obs["depth_image"] = self.model_input_depth[-self.sequence_length :].unsqueeze(0)
-
-        if hasattr(self.model, 'module') and isinstance(self.model.module, RT1Net) or isinstance(self.model, RT1Net):
-            obs["natural_language_embedding"] = self.instruction[None, None, ...].repeat(1, obs["image"].shape[1],  1)
-        else:
-            obs["natural_language_embedding"] = self.instruction[None, None, ...].repeat(1, obs["image"].shape[1], 1, 1)
-        if obs_pose is not None:
-            obs['poses'] = obs_pose.to(self.device)
         if self.use_language_instruction:
             obs["image_transformed"] = self.model_input_tranformed[-self.sequence_length:].unsqueeze(0)
+        obs["natural_language_embedding"] = self.instruction[None, None, ...].repeat(1, obs["image"].shape[1], 1, 1)
         obs["natural_language_instruction"] = [self.natural_instruction] * obs["image"].shape[1]
+        if self.use_segmentation:
+
+            # import ipdb;ipdb.set_trace()
+            seg_img = torch.tensor(self.observation[-self.sequence_length:])
+
+            seg_inputs = self.segmentation_processor(
+                # images = obs["image"].reshape(-1, *obs['image'].shape[2:]), 
+                images = seg_img,
+                text = obs["natural_language_instruction"], 
+                return_tensors = 'pt'
+            ).to(self.device)
+            with torch.no_grad():
+                seg_outputs = self.segmentation_model(**seg_inputs)
+            
+            seg_result = self.segmentation_processor.post_process_grounded_object_detection(
+                seg_outputs,
+                seg_inputs.input_ids,
+                box_threshold=0.4,
+                text_threshold=0.3,
+                target_sizes=[(obs['image'].shape[-2], obs['image'].shape[-3])] * obs["image"].shape[1]
+            )
+            
+            boxes = [result['boxes'][0,:].tolist() if result['boxes'].shape[0]!=0 else torch.tensor([0,0,0,0], device = self.device).tolist()  for result in seg_result]
+            boxes = torch.tensor(boxes, dtype = torch.int32, device = self.device).unsqueeze(0)
+            obs['segmentation'] = boxes
+
         with torch.cuda.amp.autocast():
             with torch.no_grad():
                 # 1 x T x L x C
-                if hasattr(self.model, 'module'):
-                    if self.exec_steps is None:
-                        model_output = self.model.module.inference(obs, num_given_observation=1)
-                    else:
-                        model_output = self.model.module.inference(obs, exec_steps = self.exec_steps, num_given_observation=1)
+                if self.exec_steps is None:
+                    model_output = self.model.module.inference(obs)
                 else:
-                    if self.exec_steps is None:
-                        model_output = self.model.inference(obs, num_given_observation=1)
-                    else:
-                        model_output = self.model.inference(obs, exec_steps = self.exec_steps, num_given_observation=1)
+                    model_output = self.model.module.inference(obs, exec_steps = self.exec_steps)
 
         # 1 x L x C
         if model_output.dim() == 4:
             model_output = model_output.flatten(0,1)
-        if hasattr(self.model, 'module'):
-            if isinstance(self.model.module, RT1Net):
-                detokenize_output = self.model.module.action_tokenizer.detokenize(torch.argmax(model_output, dim=-1))
-            else:
-                detokenize_output, _, _ = self.model.module.action_tokenizer.detokenize(model_output)
-        else:
-            detokenize_output, _, _ = self.model.action_tokenizer.detokenize(model_output)
-        
+        detokenize_output, _, _ = self.model.module.action_tokenizer.detokenize(model_output)
+        detokenize_output["rotation_delta"][:,0] += 1
         outputs = []
         # import pdb;pdb.set_trace()
         for i in range(model_output.shape[0]):
             # target_pose = self.get_target_pose(detokenize_output["world_vector"][i].cpu().numpy(), detokenize_output["rotation_delta"][i].cpu().numpy())
 
-            if ret_7:
-                output = torch.cat(
-                    [
-                        # torch.tensor(target_pose.p),
-                        # torch.tensor(target_pose.q),
-                        detokenize_output["world_vector"][i].cpu(),
-                        detokenize_output["rotation_delta"][i].cpu(),
-                        detokenize_output["gripper_closedness_action"][i].cpu(),
-                    ]
-                )
-            else:
-                detokenize_output["rotation_delta"][i,0] += 1
-                output = torch.cat(
-                    [
-                        # torch.tensor(target_pose.p),
-                        # torch.tensor(target_pose.q),
-                        detokenize_output["world_vector"][i].cpu(),
-                        detokenize_output["rotation_delta"][i].cpu(),
-                        detokenize_output["gripper_closedness_action"][i].cpu(),
-                        detokenize_output["terminate_episode"][i][[0]].cpu(),
-                    ]
-                )
+            output = torch.cat(
+                [
+                    # torch.tensor(target_pose.p),
+                    # torch.tensor(target_pose.q),
+                    detokenize_output["world_vector"][i].cpu(),
+                    detokenize_output["rotation_delta"][i].cpu(),
+                    detokenize_output["gripper_closedness_action"][i].cpu(),
+                    detokenize_output["terminate_episode"][i][[0]].cpu(),
+                ]
+            )
 
-                # add 1 to quat
-                output[-2] = (output[-2] > 0.0).float() * 2 - 1
-                output[-1] = (output[-1] > 0.5).float()
+            # add 1 to quat
+            output[-2] = (output[-2] > 0.0).float() * 2 - 1
+            output[-1] = (output[-1] > 0.5).float()
             # self.frame += self.stride
             outputs.append(output)
         
@@ -386,6 +363,7 @@ class PytorchInference(nn.Module):
 
         # import pdb;pdb.set_trace()
         return output.cpu().numpy()
+
 
 
 def analyze_traj_str(traj_str):
@@ -409,17 +387,16 @@ def close_loop_eval_v2(
     eval_data_list=None,
     args=None,
     rand_seed=0,
-    json_repo="/xxx/xxx/share_data/Anonymous/maniskill2/demos/v0/rigid_body/",
+    json_repo="/xxx/xxx/share_data/Anonymous/maniskill2/demos/v0/rigid_body/", # maniskill2 official files
     camera_coord=True,
     stride=1,
     root_folder = None,
     data_root_path = None,
     exec_steps = None,
-    cfg=None,
-    eval_dataset=None,
-    use_language_instruction=False,
+    use_language_instruction = False,
+    temp_fix = False,
 ):
-    if 'DEBUG' in os.environ: import ipdb;ipdb.set_trace()
+    
     client = Client()
     np.set_printoptions(suppress=True, precision=3)
     eval_traj_list = pickle.load(open(eval_data_list, "rb"))
@@ -430,18 +407,7 @@ def close_loop_eval_v2(
         eval_traj_index = []
         eval_traj_index.append(0)
     eval_traj_index = sorted(eval_traj_index)
-    print(eval_traj_index)
-    extrinsics_pool = np.asarray([[[-4.4721359e-01, 8.9442706e-01,-1.4901161e-08, -4.4721358e-02], [ 6.6666663e-01, 3.3333331e-01,-6.6666663e-01, 1.3333333e-01], 
-                                   [-5.9628463e-01,-2.9814237e-01,-7.4535596e-01, 6.8572754e-01], [ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00,]],
-                                   [[ 4.4721359e-01, 8.9442706e-01, 1.4901161e-08,  4.4721358e-02], [ 6.6666663e-01,-3.3333331e-01,-6.6666663e-01, 1.3333333e-01],
-                                     [-5.9628463e-01, 2.9814237e-01,-7.4535596e-01, 6.8572754e-01],[ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00,]],
-                                     [[-4.4721359e-01, 8.9442718e-01, 3.7252903e-09, -4.4721343e-02],[ 1.9518001e-01, 9.7590014e-02, -9.7590005e-01, 3.1228808e-01],
-                                      [-8.7287164e-01,-4.3643576e-01,-2.1821789e-01, 4.3643579e-01],[ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00,]],
-                                      [[ 3.1622776e-01, 9.4868326e-01,-7.4505806e-09,  3.1622782e-02],[ 7.0392162e-01,-2.3464054e-01,-6.7040157e-01, 1.3743240e-01],
-                                       [-6.3599873e-01, 2.1199957e-01,-7.4199849e-01, 9.5399815e-01],[ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]],
-                                       [[-3.9391929e-01, 9.1914511e-01, 7.4505806e-09, -7.8783855e-02],[ 5.0444633e-01, 2.1619129e-01,-8.3593971e-01, 1.8448329e-01],
-                                        [-7.6834989e-01,-3.2929277e-01,-5.4882127e-01, 8.1225550e-01],[ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00,  1.0000000e+00]]])
-
+    
 
     success_num = {"PickCube-v0" : 0.0, "PickSingleYCB-v0" : 0.0, "StackCube-v0" : 0.0, "PickClutterYCB-v0": 0.0,
                    "AssemblingKits-v0" : 0.0, "PegInsertionSide-v0": 0.0, "PickSingleEGAD-v0": 0.0}
@@ -453,55 +419,21 @@ def close_loop_eval_v2(
         data_root_path = data_root_path.replace('camerabase1','camerabase1')
     else:
         data_root_path = data_root_path.replace('camerabase4','camerabase1')
-    env_id, select_camera, seed, reset_kwargs, instruction = analyze_traj_str_v2(client, traj_str, json_repo, data_root_path)
-    data_tmp_ = pickle.loads(client.get(os.path.join(data_root_path, traj_str)))
-    def get_changed_pose(eval_dataset, data_path_, end_chaged_pose=False):
-        # data_path_ = 'PickClutterYCB-v0/PickClutterYCB-v0_traj_3472_camera_11/data.pkl'
-        data_url = os.path.join(eval_dataset.data_path, data_path_)
-        data_pkl = pickle.loads(eval_dataset.client.get(data_url))
-        
-        # for i in range(100):
-        trajs = eval_dataset.construct_traj(data_pkl, data_path_)
-        #     print(i, trajs["action"]['gripper_change_pose'][0])
-        if end_chaged_pose:
-            target_position_pose = torch.tensor(data_pkl['step'][-1]['prev_ee_pose']).clone()
-
-            target_position_pose[0] -= 0.615
-
-
-            camera_extrinsic_cv = torch.tensor(data_pkl['step'][0]["camera_extrinsic_cv"])
-            gripper_change_pose = get_pose_cam(camera_extrinsic_cv if cfg.dataset.use_baseframe_action == False else torch.eye(4), target_position_pose)
-            
-            t_gripper_position = torch.tensor(data_pkl['step'][-1]["action"][-1], dtype=torch.float32,).unsqueeze(-1)
-            t_terminate_episode = torch.tensor([1, 0, 0], dtype=torch.int32)
-            gripper_change_pose = torch.cat([gripper_change_pose, t_gripper_position, t_terminate_episode], dim=-1)
-            
-            return gripper_change_pose
-        # print(trajs['action']['world_vector'], trajs["action"]['gripper_closedness_action'], trajs["action"]['gripper_change_pose'][0])
-        return trajs["action"]['gripper_change_pose'][0]
-        pass
-
-    obs_pose = None
-    if 'obs_poses' in cfg and cfg.obs_poses == 2:
-        obs_pose = get_changed_pose(eval_dataset, traj_str)[None, None,]
+    env_id, select_camera, seed, reset_kwargs, instruction, seg_obj = analyze_traj_str_v2(client, traj_str, json_repo, data_root_path)
     # env_id = 'PickCube-v0'; select_camera = 1; seed = 982; reset_kwargs = {}
-    camera_pose = look_at(camera_pool[select_camera][:3], camera_pool[select_camera][3:6], camera_pool[select_camera][6:9])
-    fix_camera_pool = {}
-    fix_camera_pool["camera_1"] = look_at([0.3, 0.2, 0.6], [-0.1, 0, 0.1])
-    fix_camera_pool["camera_2" ] = look_at([0.3, -0.2, 0.6], [-0.1, 0, 0.1])
-    fix_camera_pool["camera_3"] = look_at([0.3, 0.2, 0.4], [-0.1, 0, 0.3])
-    fix_camera_pool["camera_4"] = look_at([0.5, -0.2, 0.8], [-0.1, 0, 0.1])
-    fix_camera_pool["camera_5"] = look_at([0.5, 0.3, 0.6], [-0.2, 0, 0.1])  
-    
-    if 'fix_camera' in cfg and cfg.fix_camera:
-        for ii in range(0, 5):
-            if (extrinsics_pool[ii].astype(np.float32) == data_tmp_['step'][0]['camera_extrinsic_cv']).all():
+  
+      
+    if temp_fix:
+        data_temp = pickle.loads(client.get(os.path.join(data_root_path, traj_str)))
+        for ii in range(5):
+            if (extrinsics_pool[ii].astype(np.float32) == data_temp['step'][0]['camera_extrinsic_cv']).all():
                 select_camera = ii + 1
                 break
-        # select_camera = traj_str.split('camera_')[1][:1]
-        camera_pose = fix_camera_pool["camera_{}".format(select_camera)]
+        camera_pose = CAMERA_POSES["camera_{}".format(select_camera)]
+
     else:
-        camera_pose = look_at(camera_pool[select_camera][:3], camera_pool[select_camera][3:6], camera_pool[select_camera][6:9])    
+
+        camera_pose = look_at(camera_pool[select_camera][:3], camera_pool[select_camera][3:6], camera_pool[select_camera][6:9])
     # import pdb;pdb.set_trace()
     env: BaseEnv = gym.make(
         env_id,
@@ -526,7 +458,7 @@ def close_loop_eval_v2(
 
     obs, _ = env.reset(seed=seed, options=reset_kwargs)
 
-    model.set_natural_instruction(instruction)
+    model.set_natural_instruction(instruction, seg_obj)
     # total_num = 0
     # start_time = time.time()
 
@@ -546,7 +478,7 @@ def close_loop_eval_v2(
         #     break
        # if 'DEBUG' in os.environ: import ipdb;ipdb.set_trace()
         
-        model_output_steps = model.inference(obs["camera_param"]["base_camera"]["extrinsic_cv"], obs_pose=obs_pose,)
+        model_output_steps = model.inference(obs["camera_param"]["base_camera"]["extrinsic_cv"])
         # model_terminate = model_output[-1]
         
         for exec_i in range(exec_steps):
@@ -554,18 +486,7 @@ def close_loop_eval_v2(
             target_pose = model.get_target_pose(model_output[:3], model_output[3:7])
             model_output[:3] = target_pose.p
             model_output[3:7] = target_pose.q
-            # if step_cur in [52,0,48] and 'DEBUG' in os.environ:
-            #     #set pose
-            #     model_output[:3] = data_temp['step'][step_cur+4]['prev_ee_pose'][:3]
-            #     model_output[3:7] = data_temp['step'][step_cur+4]['prev_ee_pose'][3:7]
-            # step_cur += 4
-            # if 'DEBUG' in os.environ:
-            #      from PIL import Image
-            #      import io
-            #      Image.fromarray(obs["image"]["base_camera"]["rgb"]).save("/xxx/xxx/share_data/Anonymous/obs_temp{}.png".format(step_cur-4))
-            #      Image.fromarray(np.load(io.BytesIO(client.get(os.path.join(data_root_path, traj_str.replace('/data.pkl',''), data_temp['step'][step_cur-4]['observation']['image']))))['data']).save("/xxx/xxx/share_data/Anonymous/gt_temp{}.png".format(step_cur-4))
-            #      print('step:', step_cur, model_output[:7], data_temp['step'][step_cur]['prev_ee_pose'], model_output[7], data_temp["step"][step_cur]["action"][-1])
-            #      print('diff:', model_output[:7] - data_temp['step'][step_cur]['prev_ee_pose'])
+            
             delta, loop = np.array([1, 1, 1, 1, 1, 1, 1], dtype=float), 8
             while np.max(np.abs(delta[:3])) > 1e-4 and loop > 0:
                 loop -= 1
@@ -578,23 +499,7 @@ def close_loop_eval_v2(
                 if render_goal_point and hasattr(env, "goal_site"):
                     env.goal_site.unhide_visual()
                 obs, reward, terminated, truncated, info = env.step(action)
-            if 'obs_poses' in cfg and cfg.obs_poses == 2:
-                cur_ee_pose = eef_pose(env, extrinsic_cv=obs["camera_param"]["base_camera"]["extrinsic_cv"], camera_coord=camera_coord)
 
-                should_change_obs_pose = np.linalg.norm(cur_ee_pose.p - obs_pose[0, 0, :3].cpu().numpy(), ord=1) < 1e-1 
-                    # \
-                        # and np.linalg.norm(cur_ee_pose.q - obs_pose[3:7].cpu().numpy(), ord=1) < 1e-3 
-                # import ipdb;ipdb.set_trace()
-                # print(step_i, model_output_new[:8], should_change_obs_pose, cur_ee_pose.p, obs_pose[0, 0, :3], camera_coord, np.linalg.norm(cur_ee_pose.p - obs_pose[0,0,:3].cpu().numpy(), ord=1))
-                # import ipdb;ipdb.set_trace()
-                if model_output[7] == -1: # TODO it is better to change the fixed value.
-                    # if should_change_obs_pose:
-                    obs_pose = get_changed_pose(eval_dataset, traj_str, True)[None, None,]
-                    # print('change obs pose', step_i, obs_pose)
-                else:
-                    # 1
-                    obs_pose = get_changed_pose(eval_dataset, traj_str)[None, None,]
-                   
             model.frame += model.stride
             truncated = model.frame >= MAX_EPISODE_STEPS
             if terminated or truncated:
@@ -611,8 +516,7 @@ def close_loop_eval_v2(
                     data_root_path = data_root_path.replace('camerabase1','camerabase1')
                 else:
                     data_root_path = data_root_path.replace('camerabase4','camerabase1')
-                env_id_new, select_camera_new, seed_new, reset_kwargs_new, instruction_new = analyze_traj_str_v2(client, traj_str, json_repo, data_root_path)
-                data_tmp_ = pickle.loads(client.get(os.path.join(data_root_path, traj_str)))
+                env_id_new, select_camera_new, seed_new, reset_kwargs_new, instruction_new, seg_obj = analyze_traj_str_v2(client, traj_str, json_repo, data_root_path)
                 if env_id != env_id_new or select_camera != select_camera_new or instruction_new != instruction or reset_kwargs_new != reset_kwargs:
                     env_id = env_id_new
                     select_camera = select_camera_new
@@ -620,14 +524,20 @@ def close_loop_eval_v2(
                     reset_kwargs = reset_kwargs_new
                     instruction = instruction_new
 
-                    if 'fix_camera' in cfg and cfg.fix_camera:
-                        for ii in range(0, 5):
-                            if (extrinsics_pool[ii].astype(np.float32) == data_tmp_['step'][0]['camera_extrinsic_cv']).all():
+                    if temp_fix:
+                        data_temp = pickle.loads(client.get(os.path.join(data_root_path, traj_str)))
+                        for ii in range(5):
+                            if (extrinsics_pool[ii].astype(np.float32) == data_temp['step'][0]['camera_extrinsic_cv']).all():
                                 select_camera = ii + 1
                                 break
-                        camera_pose = fix_camera_pool["camera_{}".format(select_camera)]
+                        camera_pose = CAMERA_POSES["camera_{}".format(select_camera)]
+
                     else:
-                        camera_pose = look_at(camera_pool[select_camera][:3], camera_pool[select_camera][3:6], camera_pool[select_camera][6:9])    
+                        camera_pose = look_at(camera_pool[select_camera][:3], camera_pool[select_camera][3:6], camera_pool[select_camera][6:9])
+
+
+
+                        
                     env: BaseEnv = gym.make(
                         env_id,
                         renderer_kwargs={"offscreen_only": True, "device": f"cuda:{args.local_rank}"},
@@ -646,7 +556,7 @@ def close_loop_eval_v2(
                         record_dir = record_dir.format(env_id=env_id)
                         env = RecordEpisode(env, record_dir, render_mode=render_mode)
                     # instruction = NATURAL_INSTRUCTIONS[env_id]
-                    model.set_natural_instruction(instruction)
+                    model.set_natural_instruction(instruction, seg_obj)
                 env_id = env_id_new
                 select_camera = select_camera_new
                 seed = seed_new
@@ -655,31 +565,6 @@ def close_loop_eval_v2(
                     env.goal_site.unhide_visual()
                 obs, _ = env.reset(seed=seed, options=reset_kwargs)
                 model.reset_observation()
-                if 'obs_poses' in cfg and cfg.obs_poses in [1, 4, 7, 11]:
-                    cur_ee_pose = eef_pose(env, extrinsic_cv=obs["camera_param"]["base_camera"]["extrinsic_cv"], camera_coord=camera_coord)
-                    cur_eef_pose_7d = np.concatenate([cur_ee_pose.p, cur_ee_pose.q], axis=-1)
-                    cur_eef_pose_7d = torch.tensor(cur_eef_pose_7d)
-                    cur_eef_pose_7d[0] -= 0.615
-                    if 'abs_pose' in cfg and cfg.abs_pose == 2:
-                        tmp_m = quaternion_to_matrix(torch.tensor(cur_ee_pose.q))
-                        euler_rot = matrix_to_euler_angles(tmp_m, convention='XYZ').cpu().numpy()
-                        cur_eef_pose_7d = np.concatenate([cur_ee_pose.p, euler_rot], axis=-1)
-                        cur_eef_pose_7d = torch.tensor(cur_eef_pose_7d)
-                        pass                    
-                    t_ = torch.tensor([0, 1, 0], dtype=torch.int32)
-                    cur_abs_pose = torch.cat([cur_eef_pose_7d, torch.tensor([1], dtype=torch.float32), t_],dim=-1)[None, None,]
-                    current_pose_queue = []
-                    current_pose_queue.append(cur_abs_pose)
-                    current_pose_queue.append(cur_abs_pose)
-                    if cfg.obs_poses == 4:
-                        obs_pose = cur_abs_pose
-                    elif cfg.obs_poses in [1, 7]:
-                        obs_pose = get_changed_pose(eval_dataset, traj_str)[None, None,]
-                        obs_pose[:, :, 7:] = torch.zeros_like(obs_pose[:, :, 7:])
-                        obs_pose = torch.cat([cur_abs_pose, obs_pose], dim=1)
-                    elif cfg.obs_poses == 11:
-                        obs_pose = torch.cat([current_pose_queue[-2], current_pose_queue[-1]], dim=1)                
-                moving_model_output = None                
                 model.set_eef_pose(eef_pose(env, obs["camera_param"]["base_camera"]["extrinsic_cv"], camera_coord=camera_coord))
                 model.set_observation(rgb=obs["image"]["base_camera"]["rgb"], wrist=obs["image"]["hand_camera"]["rgb"])
                 break
@@ -693,24 +578,26 @@ def close_loop_eval_v2(
     total_success_rate = np.mean(success_list)
     env.close()
     del env
-    # end_time = time.time()
-    # print(f"time: {end_time - start_time}, i: {i}, total_num: {total_num}")
-    # print(success_num, total_success_rate, flush = True)
-    # sys.exit()
+    
+    print(success_num, total_success_rate, flush = True)
+    
     return success_num, total_success_rate
+
+
+
+
+
 
 
 def analyze_traj_str_v2(client, traj_str, json_repo, data_root_path):
 
     env_id = traj_str.split("/")[0]
-    # if env_id == 'PickCube-v0' or env_id == "StackCube-v0" or env_id == "PickSingleYCB-v0":
-    #     data_root_path = data_root_path.replace('0503','0413')
-    # select_camera = int(traj_str.split("_")[-1].split(".")[0])
+    
     data = pickle.loads(client.get(os.path.join(data_root_path, traj_str)))
     select_camera = data["camera_index_in_pool"]
     json_root_path = os.path.join(json_repo, env_id)
 
-    # if env_id == "PickCube-v0" or env_id == "StackCube-v0" or env_id == 'PickClutterYCB-v0':
+    
     if env_id != "PickSingleYCB-v0":
         json_data = load_json(os.path.join(json_root_path, "trajectory.json"))
     elif env_id == "PickSingleYCB-v0":
@@ -728,4 +615,30 @@ def analyze_traj_str_v2(client, traj_str, json_repo, data_root_path):
     seed = reset_kwargs.pop("seed")
    
     instruction = data["step"][0]["observation"]["natural_instruction"]
-    return env_id, select_camera, seed, reset_kwargs, instruction
+    if 'segmentation' in data['step'][0]['observation']:
+        seg = data["step"][0]["observation"]["segmentation"]
+        seg_obj = None
+        for k in seg.keys():
+            if k in instruction and k != 'robot' and k!='site':
+                seg_obj = k
+                if k == '':
+                    seg_obj = 'object'
+                if "StackCube-v0" in traj_str:
+                    seg_obj == 'red cube'
+                break
+        
+        if seg_obj is None:
+            if env_id == "PickCube-v0":
+                seg_obj = 'cube'
+            elif env_id == "StackCube-v0":
+                seg_obj == 'red cube'
+            elif env_id == "PickSingleEGAD":
+                seg_obj = 'object'
+            else:
+                pos_end = instruction.find('and')
+                pos_start = len('pick up the ')
+                seg_obj = instruction[pos_start:pos_end - 1]
+                
+        return env_id, select_camera, seed, reset_kwargs, instruction, seg_obj   
+    else:
+        return env_id, select_camera, seed, reset_kwargs, instruction, None

@@ -1,16 +1,14 @@
-data_path: 's3://Anonymous/Sim_Data/ManiSkill2-0503/'
-language_embedding_path: 's3://Anonymous/Sim_Data_language_embeddings_77token_0503'
+data_path: 's3://your own data path'
+language_embedding_path: 's3://your preprocessed language embedding path'
 traj_per_episode: 2
 traj_length: 2
 cameras_per_scene: 20
 use_baseframe_action: false
 use_language_instruction: true
 split_type: 'fix_traj'
-train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_balanced_train_list.pkl'
-eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_balanced_eval_list.pkl'
+train_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_balanced_train_list.pkl' # your train datalist, pkl file
+eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_balanced_eval_list.pkl' # yout eval datalist, pkl file
 stride: 4
-# close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/close_loop_eval_data_list_200.pkl'
-# close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/FilePath/hold_25_class_ycb_close_loop_eval_data_list.pkl'
-close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_close_loop_eval_list.pkl'
+close_loop_eval_data_list: '/xxx/xxx/share_data/Anonymous/Dataset/Sim_Data/maniskill2_0503_datalist/full_in_domain_close_loop_eval_list.pkl' # your close loop eval datalist, pkl file
 num_given_observation: 2
 include_target: 0

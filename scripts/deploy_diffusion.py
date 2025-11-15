@@ -32,8 +32,7 @@ import os.path
 import hydra
 from omegaconf import DictConfig
 
-# ruff: noqa: E402
-from Dataset_HF.utils import get_action_spec
+from Dataset_Sim.SimDataset_discrete import get_action_spec
 import json_numpy
 from scripts.close_loop_eval_diffusion import PytorchDiffInference
 
